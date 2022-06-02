@@ -1,0 +1,7 @@
+{
+    "BTCUSD": {
+        "BinanceUS": "BTCUSD",
+        "Kraken": "XXBTZUSD",
+        "FTX": "BTC/USD",
+    }
+}
