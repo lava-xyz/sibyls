@@ -1,18 +1,7 @@
 use crate::AssetPairInfo;
-use chrono::Utc;
-use clokwerk::AsyncScheduler;
-use event_structs::*;
-use queues::{CircularBuffer, IsQueue};
-use secp256k1_zkp::{
-    hashes::*,
-    rand::{self, rngs::ThreadRng, RngCore},
-    All, KeyPair, Message, Secp256k1, XOnlyPublicKey as SchnorrPublicKey,
-};
+use secp256k1_zkp::KeyPair;
 use serde::Serialize;
-use serde_json;
 use sled::Db;
-use time::{Duration, OffsetDateTime, Time};
-use tokio::task::JoinHandle;
 
 pub mod error;
 
@@ -123,112 +112,6 @@ impl Oracle {
     }
 }
 
-pub struct OracleScheduler {
-    oracle: Oracle,
-    scheduler: AsyncScheduler<Utc>,
-    secp: Secp256k1<All>,
-    attestation_time: Time,
-    announcement_offset: Duration,
-    outstanding_sk_nonces: CircularBuffer<Vec<[u8; 32]>>,
-}
-
-impl OracleScheduler {
-    fn init(
-        oracle: Oracle,
-        attestation_time: Time,
-        announcement_offset: Duration,
-    ) -> JoinHandle<Result<()>> {
-        let clone = oracle.clone();
-        // start event creation task
-        tokio::spawn(async move {
-            OracleScheduler {
-                oracle: clone,
-                scheduler: AsyncScheduler::with_tz(Utc),
-                secp: Secp256k1::new(),
-                attestation_time,
-                announcement_offset,
-                outstanding_sk_nonces: CircularBuffer::new(0),
-            }
-            .create_events(attestation_time, announcement_offset)
-            .await
-        })
-    }
-
-    async fn create_events(
-        &mut self,
-        attestation_time: Time,
-        announcement_offset: Duration,
-    ) -> Result<()> {
-        let now = OffsetDateTime::now_utc();
-        let mut next_attestation = now.clone().replace_time(attestation_time);
-        if next_attestation < now {
-            next_attestation += Duration::DAY;
-        }
-        let mut next_announcement = next_attestation - announcement_offset;
-        self.outstanding_sk_nonces = CircularBuffer::new(
-            ((now - next_announcement).whole_days() + 1)
-                .try_into()
-                .expect("should not happen"),
-        );
-        while next_announcement <= now {
-            let oracle_event =
-                self.build_oracle_event(next_announcement + announcement_offset, false)?;
-
-            let announcement = Announcement {
-                signature: self.secp.sign_schnorr(
-                    &Message::from_hashed_data::<OracleAnnouncementHash>(
-                        &oracle_event.encode().into_bytes(),
-                    ),
-                    &self.oracle.keypair,
-                ),
-                oracle_pubkey: self.oracle.keypair.public_key(),
-                oracle_event,
-            };
-            self.oracle.event_database.insert(
-                next_attestation.to_string().into_bytes(),
-                serde_json::to_string(&DbValue(announcement.encode(), None))?.into_bytes(),
-            );
-            next_announcement += Duration::DAY;
-        }
-
-        todo!()
-    }
-
-    fn build_oracle_event(
-        &mut self,
-        maturation: OffsetDateTime,
-        should_circulate: bool,
-    ) -> Result<OracleEvent> {
-        let secp = Secp256k1::new();
-        let mut rng = rand::thread_rng();
-        let digits = self.oracle.asset_pair_info.event_descriptor.num_digits;
-        let mut sk_nonces = Vec::with_capacity(digits.into());
-        let mut nonces = Vec::with_capacity(digits.into());
-        for _ in 0..digits {
-            let mut sk_nonce = [0u8; 32];
-            rng.fill_bytes(&mut sk_nonce);
-            let oracle_r_kp = secp256k1_zkp::KeyPair::from_seckey_slice(&secp, &sk_nonce)?;
-            let nonce = SchnorrPublicKey::from_keypair(&oracle_r_kp);
-            sk_nonces.push(sk_nonce);
-            nonces.push(nonce);
-        }
-        assert_eq!(
-            match self
-                .outstanding_sk_nonces
-                .add(sk_nonces)
-                .expect("should not happen")
-            {
-                None => false,
-                Some(_) => true,
-            },
-            should_circulate
-        );
-        Ok(OracleEvent {
-            nonces,
-            maturation,
-            event_descriptor: self.oracle.asset_pair_info.event_descriptor.clone(),
-        })
-    }
-}
+pub mod oracle_scheduler;
 
 mod pricefeeds;
