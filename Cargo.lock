@@ -1375,6 +1375,7 @@ dependencies = [
  "displaydoc",
  "parking_lot 0.12.0",
  "queues",
+ "secp256k1-sys",
  "secp256k1-zkp",
  "serde",
  "serde_json",
