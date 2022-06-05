@@ -1,10 +1,6 @@
-use actix_web::{
-    body::BoxBody, get, http::header::ContentType, web, App, HttpRequest, HttpResponse, HttpServer,
-    Responder,
-};
-use anyhow;
+use actix_web::{get, http::header::ContentType, web, App, HttpResponse, HttpServer};
 use clap::Parser;
-use secp256k1_zkp::{rand, KeyPair, PublicKey, Secp256k1, SecretKey};
+use secp256k1_zkp::{rand, KeyPair, Secp256k1, SecretKey};
 use serde::{Deserialize, Serialize};
 use serde_json::{self, json};
 use sled::IVec;
@@ -12,8 +8,6 @@ use std::{
     collections::HashMap,
     fs::{self, File},
     io::Read,
-    ops::Deref,
-    path::PathBuf,
     str::FromStr,
 };
 use time::{format_description::well_known::Rfc3339, macros::time, Duration, OffsetDateTime, Time};
@@ -22,7 +16,7 @@ use sybils::{
     oracle::{
         oracle_scheduler,
         pricefeeds::{Bitstamp, GateIo, Kraken, PriceFeed},
-        DbValue, EventDescriptor, Oracle, Result,
+        DbValue, Oracle, Result,
     },
     AssetPair, AssetPairInfo,
 };
@@ -234,7 +228,7 @@ async fn main() -> anyhow::Result<()> {
                 pricefeeds,
                 ATTESTATION_TIME,
                 ANNOUNCEMENT_OFFSET,
-            );
+            )?;
 
             Ok(oracle)
         }))

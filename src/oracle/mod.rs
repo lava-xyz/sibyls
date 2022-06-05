@@ -21,7 +21,7 @@ pub struct Oracle {
 impl Oracle {
     pub fn new(asset_pair_info: AssetPairInfo, keypair: KeyPair) -> Result<Oracle> {
         // setup event database
-        let path = format!("events/{}", asset_pair_info.asset_pair.to_string());
+        let path = format!("events/{}", asset_pair_info.asset_pair);
         let event_database = sled::open(path)?;
 
         Ok(Oracle {

@@ -23,12 +23,11 @@ use serde::Deserialize;
 use serde_json;
 use std::sync::Arc;
 use time::{
-    ext::NumericalDuration, format_description::well_known::Rfc3339, macros::format_description,
-    Duration, OffsetDateTime, Time,
+    format_description::well_known::Rfc3339, macros::format_description, Duration, OffsetDateTime,
+    Time,
 };
 use tokio::{
     sync::{mpsc, Mutex},
-    task::JoinHandle,
     time::sleep,
 };
 
@@ -153,7 +152,6 @@ struct OracleScheduler {
     oracle: Oracle,
     secp: Secp256k1<All>,
     pricefeeds: Vec<Box<dyn PriceFeed + Send + Sync>>,
-    attestation_time: Time,
     announcement_offset: Duration,
     event_infos: Queue<EventInfo>,
     next_announcement: OffsetDateTime,
@@ -222,7 +220,7 @@ impl OracleScheduler {
         self.oracle.event_database.insert(
             self.next_attestation.format(&Rfc3339).unwrap().into_bytes(),
             serde_json::to_string(&event_info.db_value)?.into_bytes(),
-        );
+        )?;
         self.next_attestation += Duration::DAY;
         Ok(())
     }
@@ -244,14 +242,16 @@ pub fn init(
     // start event creation task
     tokio::spawn(async move {
         let (tx, mut rx) = mpsc::unbounded_channel();
-        create_events(
+        if let Err(err) = create_events(
             oracle,
             secp,
             pricefeeds,
             attestation_time,
             announcement_offset,
             tx,
-        );
+        ) {
+            panic!("oracle scheduler create_events error: {}", err);
+        }
         while let Some(err) = rx.recv().await {
             panic!("oracle scheduler error: {}", err);
         }
@@ -270,7 +270,7 @@ fn create_events(
     error_transmitter: mpsc::UnboundedSender<OracleError>,
 ) -> OracleResult<()> {
     let now = OffsetDateTime::now_utc();
-    let mut next_attestation = now.clone().replace_time(attestation_time);
+    let mut next_attestation = now.replace_time(attestation_time);
     if next_attestation <= now {
         next_attestation += Duration::DAY;
     }
@@ -290,7 +290,6 @@ fn create_events(
         oracle,
         secp,
         pricefeeds,
-        attestation_time,
         announcement_offset,
         event_infos,
         next_announcement,
@@ -311,7 +310,7 @@ fn create_events(
             let error_transmitter_clone = error_transmitter_clone.clone();
             async move {
                 if let Err(err) = oracle_scheduler_clone.lock().await.create_scheduler_event() {
-                    error_transmitter_clone.send(err);
+                    error_transmitter_clone.send(err).unwrap();
                 }
             }
         });
@@ -326,7 +325,7 @@ fn create_events(
             let error_transmitter_clone = error_transmitter.clone();
             async move {
                 if let Err(err) = oracle_scheduler_clone.lock().await.attest().await {
-                    error_transmitter_clone.send(err);
+                    error_transmitter_clone.send(err).unwrap();
                 }
             }
         });
@@ -360,7 +359,7 @@ fn create_event(
     oracle.event_database.insert(
         maturation.format(&Rfc3339).unwrap().into_bytes(),
         serde_json::to_string(&db_value)?.into_bytes(),
-    );
+    )?;
     event_infos
         .add(EventInfo {
             outstanding_sk_nonces,

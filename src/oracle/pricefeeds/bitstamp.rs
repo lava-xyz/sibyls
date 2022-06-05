@@ -4,7 +4,6 @@ use async_trait::async_trait;
 use reqwest::Client;
 use serde::Deserialize;
 use serde_json::Value;
-use std::collections::HashMap;
 use time::OffsetDateTime;
 
 pub struct Bitstamp {}
@@ -18,7 +17,6 @@ struct Response {
 
 #[derive(Deserialize)]
 struct OhlcData {
-    pair: String,
     ohlc: Vec<Ohlc>,
 }
 
