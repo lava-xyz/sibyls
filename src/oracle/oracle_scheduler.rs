@@ -6,6 +6,7 @@ use chrono::Utc;
 use clokwerk::{AsyncScheduler, Job, TimeUnits};
 use core::ptr;
 use futures::stream::{self, StreamExt};
+use lightning::util::ser::Writeable;
 use queues::{queue, IsQueue, Queue};
 use secp256k1_sys::{
     types::{c_int, c_uchar, c_void, size_t},
@@ -68,10 +69,10 @@ pub struct OracleEvent {
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct EventDescriptor {
-    pub base: u64,
+    pub base: u16,
     pub is_signed: bool,
     pub unit: String,
-    pub precision: u32,
+    pub precision: i32,
     pub num_digits: u16,
 }
 
@@ -82,21 +83,94 @@ pub struct Attestation {
     pub outcomes: Vec<String>,
 }
 
+impl From<&Announcement> for dlc_messages::oracle_msgs::OracleAnnouncement {
+    fn from(ann: &Announcement) -> Self {
+        let announcement_signature =
+            secp256k1_zkp_5::schnorrsig::Signature::from_slice(ann.signature.as_ref()).unwrap();
+        let oracle_public_key =
+            secp256k1_zkp_5::schnorrsig::PublicKey::from_slice(&ann.oracle_pubkey.serialize())
+                .unwrap();
+        let oracle_event = (&ann.oracle_event).into();
+        Self {
+            announcement_signature,
+            oracle_public_key,
+            oracle_event,
+        }
+    }
+}
+
+impl From<&OracleEvent> for dlc_messages::oracle_msgs::OracleEvent {
+    fn from(event: &OracleEvent) -> Self {
+        let oracle_nonces = event
+            .nonces
+            .iter()
+            .map(|nonce| {
+                secp256k1_zkp_5::schnorrsig::PublicKey::from_slice(&nonce.serialize()).unwrap()
+            })
+            .collect::<Vec<_>>();
+        let event_maturity_epoch = event.maturation.unix_timestamp().try_into().unwrap();
+        let event_descriptor = (&event.event_descriptor).into();
+        Self {
+            oracle_nonces,
+            event_maturity_epoch,
+            event_descriptor,
+            event_id: String::new(), // todo?
+        }
+    }
+}
+
+impl From<&EventDescriptor> for dlc_messages::oracle_msgs::EventDescriptor {
+    fn from(event: &EventDescriptor) -> Self {
+        let base = event.base;
+        let is_signed = event.is_signed;
+        let unit = event.unit.clone();
+        let precision = event.precision;
+        let nb_digits = event.num_digits;
+        let numerical_descriptor = dlc_messages::oracle_msgs::DigitDecompositionEventDescriptor {
+            base,
+            is_signed,
+            unit,
+            precision,
+            nb_digits,
+        };
+        Self::DigitDecompositionEvent(numerical_descriptor)
+    }
+}
+
+impl From<&Attestation> for dlc_messages::oracle_msgs::OracleAttestation {
+    fn from(att: &Attestation) -> Self {
+        let oracle_public_key =
+            secp256k1_zkp_5::schnorrsig::PublicKey::from_slice(&att.oracle_pubkey.serialize())
+                .unwrap();
+        let signatures = att
+            .signatures
+            .iter()
+            .map(|sig| secp256k1_zkp_5::schnorrsig::Signature::from_slice(sig.as_ref()).unwrap())
+            .collect::<Vec<_>>();
+        let outcomes = att.outcomes.to_vec();
+        Self {
+            oracle_public_key,
+            signatures,
+            outcomes,
+        }
+    }
+}
+
 impl Announcement {
-    pub fn encode(&self) -> String {
-        todo!()
+    pub fn encode(&self) -> Vec<u8> {
+        dlc_messages::oracle_msgs::OracleAnnouncement::from(self).encode()
     }
 }
 
 impl OracleEvent {
-    pub fn encode(&self) -> String {
-        todo!()
+    pub fn encode(&self) -> Vec<u8> {
+        dlc_messages::oracle_msgs::OracleEvent::from(self).encode()
     }
 }
 
 impl Attestation {
-    pub fn encode(&self) -> String {
-        todo!()
+    pub fn encode(&self) -> Vec<u8> {
+        dlc_messages::oracle_msgs::OracleAttestation::from(self).encode()
     }
 }
 
@@ -349,7 +423,7 @@ fn create_event(
 
     let announcement = Announcement {
         signature: secp.sign_schnorr(
-            &Message::from_hashed_data::<OracleAnnouncementHash>(oracle_event.encode().as_bytes()),
+            &Message::from_hashed_data::<OracleAnnouncementHash>(&oracle_event.encode()),
             &oracle.keypair,
         ),
         oracle_pubkey: oracle.keypair.public_key(),

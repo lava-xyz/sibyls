@@ -12,6 +12,7 @@ use std::{
 };
 use time::{format_description::well_known::Rfc3339, macros::time, Duration, OffsetDateTime, Time};
 
+use hex::ToHex;
 use sybils::{
     oracle::{
         oracle_scheduler,
@@ -79,8 +80,8 @@ fn parse_database_entry(
     let outcome = event.1.is_some();
     ApiOracleEvent {
         asset_pair,
-        announcement: event.0,
-        attestation: event.1,
+        announcement: event.0.encode_hex::<String>(),
+        attestation: event.1.map(|att| att.encode_hex::<String>()),
         maturation,
         outcome,
     }
