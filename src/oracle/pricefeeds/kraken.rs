@@ -13,7 +13,7 @@ pub struct Kraken {}
 #[derive(Debug, Deserialize)]
 struct Response {
     error: Vec<String>,
-    result: HashMap<String, Vec<Vec<Value>>>,
+    result: HashMap<String, Value>,
 }
 
 #[async_trait]

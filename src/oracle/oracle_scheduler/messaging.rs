@@ -146,3 +146,62 @@ impl Attestation {
         dlc_messages::oracle_msgs::OracleAttestation::from(self).encode()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use time::format_description::well_known::Rfc3339;
+
+    #[ignore]
+    #[test]
+    fn suredbits_announcement_encodes_correctly() {
+        let oracle_event = OracleEvent {
+            nonces: vec![
+                "bf0b6c97a9a33f7499511b68b0c1e5a758ad51df9330b4b6d4fd841af141bb91",
+                "5d25e99260cec3e1a74257aa1edffbb2c718091d8eecd77f7dd078c69782938e",
+                "6b49f9c7b8b7aa815f2c2d646a0fffd713491a6af3506aa83b3eb7122a1a502d",
+                "2a2a83f8121013eeb1131f6f6b805e79f6cc066cae938d7873a5979d2f4888ce",
+                "0b6d548fa7fff606ec1d3668f4f407da02e3ed3090919a77c5efcb25874c1102",
+                "ac38396a26028d6e4203b6bb684b49bf95c5a67fe126a46cdd0c5287f1c37799",
+                "88059ddfddc40bd7d4bd03f59d2df492f903b45557d6382c5e3931a34ebd175e",
+                "32c1cc1b591cafb4fa6065948300e485d939bf405128dcc096eca3f4d5b68d6c",
+                "0d77575d4c7342025e04f4de78f188808a85ebb3791a75c34ebdcd54104f8a73",
+                "86e831876500d92aefe123c511b003c5aaee355a47ee076685687ca3549d5ccb",
+                "15c56b9e1ad5e300888671ba60e16fc4c2b77617982e42ab401a1f313834b7d1",
+                "7785aed84409206be3b0e62d8f735466007aa1d3709015506d31f497de0eaa43",
+                "b8530f83ae8bf455069d4754847512de24892a789a3bc90904255ebd27ee78cd",
+                "c68b2063ee08249682665644146af85f375f4967d5693cbc7473286180ad8629",
+                "0bd0d39fbb1846496cd7acb8bde77131fb1a2ecd8b2430bf84e61e13bd1b6d7d",
+                "3cd13b98d0ebf476b1ab067135e8d70334bc72ff454b617d48d0851ba01b4b32",
+                "7b37e1c81bafed68ae1f951dc340ae6cd036b67212847aed94322d3397d4e233",
+                "5c4e560486f6daa8c6074f258e3a348e2937ecba83fa8d80196f23a486cf0a30",
+            ]
+            .iter()
+            .map(|nonce| SchnorrPublicKey::from_slice(&::hex::decode(nonce).unwrap()).unwrap())
+            .collect(),
+            maturation: OffsetDateTime::parse("2022-04-11T08:00:00Z", &Rfc3339).unwrap(),
+            event_descriptor: EventDescriptor {
+                base: 2,
+                is_signed: false,
+                unit: "BTCUSD".to_string(),
+                precision: 0,
+                num_digits: 18,
+            },
+        };
+
+        let announcement = Announcement {
+            signature: SchnorrSignature::from_slice(
+                &::hex::decode("e15edeeb14a6bfa3995eeb65208c6698690bb497f22446b0505981ec202bcbc8584077c9f7209a2cf7d459c6a891a3eb863a78355868760455845f1a15fd6858").unwrap()
+            ).unwrap(),
+            oracle_pubkey: SchnorrPublicKey::from_slice(&::hex::decode("04ba9838623f02c940d20d7b185d410178cff7990c7fcf19186c7f58c7c4b8de").unwrap()).unwrap(),
+            oracle_event,
+        };
+
+        assert_eq!(
+            ::hex::decode(
+                "fdd824fd02d4e15edeeb14a6bfa3995eeb65208c6698690bb497f22446b0505981ec202bcbc8584077c9f7209a2cf7d459c6a891a3eb863a78355868760455845f1a15fd685804ba9838623f02c940d20d7b185d410178cff7990c7fcf19186c7f58c7c4b8defdd822fd026e0012bf0b6c97a9a33f7499511b68b0c1e5a758ad51df9330b4b6d4fd841af141bb915d25e99260cec3e1a74257aa1edffbb2c718091d8eecd77f7dd078c69782938e6b49f9c7b8b7aa815f2c2d646a0fffd713491a6af3506aa83b3eb7122a1a502d2a2a83f8121013eeb1131f6f6b805e79f6cc066cae938d7873a5979d2f4888ce0b6d548fa7fff606ec1d3668f4f407da02e3ed3090919a77c5efcb25874c1102ac38396a26028d6e4203b6bb684b49bf95c5a67fe126a46cdd0c5287f1c3779988059ddfddc40bd7d4bd03f59d2df492f903b45557d6382c5e3931a34ebd175e32c1cc1b591cafb4fa6065948300e485d939bf405128dcc096eca3f4d5b68d6c0d77575d4c7342025e04f4de78f188808a85ebb3791a75c34ebdcd54104f8a7386e831876500d92aefe123c511b003c5aaee355a47ee076685687ca3549d5ccb15c56b9e1ad5e300888671ba60e16fc4c2b77617982e42ab401a1f313834b7d17785aed84409206be3b0e62d8f735466007aa1d3709015506d31f497de0eaa43b8530f83ae8bf455069d4754847512de24892a789a3bc90904255ebd27ee78cdc68b2063ee08249682665644146af85f375f4967d5693cbc7473286180ad86290bd0d39fbb1846496cd7acb8bde77131fb1a2ecd8b2430bf84e61e13bd1b6d7d3cd13b98d0ebf476b1ab067135e8d70334bc72ff454b617d48d0851ba01b4b327b37e1c81bafed68ae1f951dc340ae6cd036b67212847aed94322d3397d4e2335c4e560486f6daa8c6074f258e3a348e2937ecba83fa8d80196f23a486cf0a306253e000fdd80a100002000642544355534400000000001213446572696269742d4254432d31314150523232"
+            ).unwrap(),
+            announcement.encode(),
+        );
+    }
+}
