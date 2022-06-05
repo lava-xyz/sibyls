@@ -16,4 +16,10 @@ pub enum OracleError {
 
     /// json serialization/deserialization error: {0}
     SerdeJsonError(#[from] serde_json::Error),
+
+    /// tokio join error: {0}
+    JoinError(#[from] tokio::task::JoinError),
+
+    /// pricefeed error: {0}
+    PriceFeedError(#[from] super::pricefeeds::PriceFeedError),
 }

@@ -1,8 +1,11 @@
-use super::{pricefeeds::PriceFeed, DbValue, Oracle, OracleError, Result as OracleResult};
+use super::{
+    pricefeeds::{PriceFeed, Result as PriceFeedResult},
+    DbValue, Oracle, OracleError, Result as OracleResult,
+};
 use chrono::Utc;
 use clokwerk::{AsyncScheduler, Job, TimeUnits};
 use core::ptr;
-use parking_lot::Mutex;
+use futures::stream::{self, StreamExt};
 use queues::{queue, IsQueue, Queue};
 use secp256k1_sys::{
     types::{c_int, c_uchar, c_void, size_t},
@@ -19,8 +22,15 @@ use secp256k1_zkp::{
 use serde::Deserialize;
 use serde_json;
 use std::sync::Arc;
-use time::{ext::NumericalDuration, macros::format_description, Duration, OffsetDateTime, Time};
-use tokio::{sync::mpsc, task::JoinHandle, time::sleep};
+use time::{
+    ext::NumericalDuration, format_description::well_known::Rfc3339, macros::format_description,
+    Duration, OffsetDateTime, Time,
+};
+use tokio::{
+    sync::{mpsc, Mutex},
+    task::JoinHandle,
+    time::sleep,
+};
 
 const SCHEDULER_SLEEP_TIME: std::time::Duration = std::time::Duration::from_millis(100);
 const ORACLE_ANNOUNCEMENT_MIDSTATE: [u8; 32] = [
@@ -142,7 +152,7 @@ struct EventInfo {
 struct OracleScheduler {
     oracle: Oracle,
     secp: Secp256k1<All>,
-    pricefeeds: Vec<Box<dyn PriceFeed + Send>>,
+    pricefeeds: Vec<Box<dyn PriceFeed + Send + Sync>>,
     attestation_time: Time,
     announcement_offset: Duration,
     event_infos: Queue<EventInfo>,
@@ -162,14 +172,21 @@ impl OracleScheduler {
         Ok(())
     }
 
-    fn attest(&mut self) -> OracleResult<()> {
-        let prices = self.pricefeeds.iter().filter_map(|pricefeed| {
-            pricefeed.retrieve_price(
-                self.oracle.asset_pair_info.asset_pair,
-                self.next_attestation,
-            )
-        });
-        let avg_price = prices.clone().sum::<u32>() as f64 / prices.count() as f64;
+    async fn attest(&mut self) -> OracleResult<()> {
+        let prices = stream::iter(self.pricefeeds.iter())
+            .then(|pricefeed| async {
+                pricefeed
+                    .retrieve_price(
+                        self.oracle.asset_pair_info.asset_pair,
+                        self.next_attestation,
+                    )
+                    .await
+            })
+            .collect::<Vec<PriceFeedResult<_>>>()
+            .await
+            .into_iter()
+            .collect::<PriceFeedResult<Vec<_>>>()?;
+        let avg_price = prices.iter().sum::<f64>() / prices.len() as f64;
         let avg_price = avg_price.round() as u32;
         let avg_price_binary = format!(
             "{:0width$b}",
@@ -203,7 +220,7 @@ impl OracleScheduler {
         };
         event_info.db_value.1 = Some(attestation.encode());
         self.oracle.event_database.insert(
-            self.next_attestation.to_string().into_bytes(),
+            self.next_attestation.format(&Rfc3339).unwrap().into_bytes(),
             serde_json::to_string(&event_info.db_value)?.into_bytes(),
         );
         self.next_attestation += Duration::DAY;
@@ -213,7 +230,8 @@ impl OracleScheduler {
 
 pub fn init(
     oracle: Oracle,
-    pricefeeds: Vec<Box<dyn PriceFeed + Send>>,
+    secp: Secp256k1<All>,
+    pricefeeds: Vec<Box<dyn PriceFeed + Send + Sync>>,
     attestation_time: Time,
     announcement_offset: Duration,
 ) -> OracleResult<()> {
@@ -228,6 +246,7 @@ pub fn init(
         let (tx, mut rx) = mpsc::unbounded_channel();
         create_events(
             oracle,
+            secp,
             pricefeeds,
             attestation_time,
             announcement_offset,
@@ -244,7 +263,8 @@ pub fn init(
 
 fn create_events(
     mut oracle: Oracle,
-    pricefeeds: Vec<Box<dyn PriceFeed + Send>>,
+    secp: Secp256k1<All>,
+    pricefeeds: Vec<Box<dyn PriceFeed + Send + Sync>>,
     attestation_time: Time,
     announcement_offset: Duration,
     error_transmitter: mpsc::UnboundedSender<OracleError>,
@@ -255,7 +275,6 @@ fn create_events(
         next_attestation += Duration::DAY;
     }
     let mut next_announcement = next_attestation - announcement_offset;
-    let secp = Secp256k1::new();
     let mut event_infos = queue![];
     // create all events that should have already been made
     while next_announcement <= now {
@@ -291,7 +310,7 @@ fn create_events(
             let oracle_scheduler_clone = oracle_scheduler_clone.clone();
             let error_transmitter_clone = error_transmitter_clone.clone();
             async move {
-                if let Err(err) = oracle_scheduler_clone.lock().create_scheduler_event() {
+                if let Err(err) = oracle_scheduler_clone.lock().await.create_scheduler_event() {
                     error_transmitter_clone.send(err);
                 }
             }
@@ -306,7 +325,7 @@ fn create_events(
             let oracle_scheduler_clone = oracle_scheduler.clone();
             let error_transmitter_clone = error_transmitter.clone();
             async move {
-                if let Err(err) = oracle_scheduler_clone.lock().attest() {
+                if let Err(err) = oracle_scheduler_clone.lock().await.attest().await {
                     error_transmitter_clone.send(err);
                 }
             }
@@ -339,7 +358,7 @@ fn create_event(
     };
     let db_value = DbValue(announcement.encode(), None);
     oracle.event_database.insert(
-        maturation.to_string().into_bytes(),
+        maturation.format(&Rfc3339).unwrap().into_bytes(),
         serde_json::to_string(&db_value)?.into_bytes(),
     );
     event_infos
@@ -347,7 +366,7 @@ fn create_event(
             outstanding_sk_nonces,
             db_value,
         })
-        .expect("should never not be successful");
+        .unwrap();
     Ok(())
 }
 

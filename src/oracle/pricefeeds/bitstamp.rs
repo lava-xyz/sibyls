@@ -7,19 +7,31 @@ use serde_json::Value;
 use std::collections::HashMap;
 use time::OffsetDateTime;
 
-pub struct Kraken {}
+pub struct Bitstamp {}
 
 #[derive(Deserialize)]
 struct Response {
-    error: Vec<String>,
-    result: HashMap<String, Vec<Vec<Value>>>,
+    code: Option<String>,
+    errors: Option<Vec<Value>>,
+    data: Option<OhlcData>,
+}
+
+#[derive(Deserialize)]
+struct OhlcData {
+    pair: String,
+    ohlc: Vec<Ohlc>,
+}
+
+#[derive(Deserialize)]
+struct Ohlc {
+    open: String,
 }
 
 #[async_trait]
-impl PriceFeed for Kraken {
+impl PriceFeed for Bitstamp {
     fn translate_asset_pair(&self, asset_pair: AssetPair) -> &'static str {
         match asset_pair {
-            AssetPair::BTCUSD => "XXBTZUSD",
+            AssetPair::BTCUSD => "btcusd",
         }
     }
 
@@ -28,28 +40,31 @@ impl PriceFeed for Kraken {
         let asset_pair_translation = self.translate_asset_pair(asset_pair);
         let start_time = instant.unix_timestamp();
         let res: Response = client
-            .get("https://api.kraken.com/0/public/OHLC")
+            .get(format!(
+                "https://www.bitstamp.net/api/v2/ohlc/{}",
+                asset_pair_translation
+            ))
             .query(&[
-                ("pair", asset_pair_translation),
-                ("since", &start_time.to_string()),
+                ("step", "60"),
+                ("start", &start_time.to_string()),
+                ("limit", "1"),
             ])
             .send()
             .await?
             .json()
             .await?;
 
-        if !res.error.is_empty() {
+        if let Some(errs) = res.errors {
             return Err(PriceFeedError::InternalError(format!(
-                "kraken error: {:#?}",
-                res.error
+                "bitstamp error: code {}, {:#?}",
+                match res.code {
+                    None => "unknown".to_string(),
+                    Some(c) => c,
+                },
+                errs
             )));
         }
 
-        let res = res
-            .result
-            .get(asset_pair_translation)
-            .ok_or(PriceFeedError::PriceNotAvailableError(asset_pair, instant))?;
-
-        Ok(res[0][1].as_str().unwrap().parse().unwrap())
+        Ok(res.data.unwrap().ohlc[0].open.parse().unwrap())
     }
 }

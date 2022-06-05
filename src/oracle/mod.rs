@@ -1,20 +1,20 @@
 use crate::AssetPairInfo;
 use secp256k1_zkp::KeyPair;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sled::Db;
 
 pub mod error;
 
-use error::OracleError;
+pub use error::OracleError;
 pub use error::Result;
 
-#[derive(Clone, Serialize)]
-struct DbValue(String, Option<String>);
+#[derive(Clone, Deserialize, Serialize)]
+pub struct DbValue(pub String, pub Option<String>);
 
 #[derive(Clone)]
 pub struct Oracle {
     asset_pair_info: AssetPairInfo,
-    event_database: Db,
+    pub event_database: Db,
     keypair: KeyPair,
 }
 
@@ -35,4 +35,4 @@ impl Oracle {
 pub mod oracle_scheduler;
 pub use oracle_scheduler::EventDescriptor;
 
-mod pricefeeds;
+pub mod pricefeeds;

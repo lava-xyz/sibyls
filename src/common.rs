@@ -1,8 +1,8 @@
 use crate::oracle::EventDescriptor;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::fmt::{self, Debug, Display, Formatter};
 
-#[derive(Copy, Clone, Debug, Deserialize, Eq, Hash, PartialEq)]
+#[derive(Copy, Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub enum AssetPair {
     BTCUSD,
 }
