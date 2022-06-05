@@ -1,6 +1,7 @@
 use super::{PriceFeed, PriceFeedError, Result};
 use crate::AssetPair;
 use async_trait::async_trait;
+use log::info;
 use reqwest::Client;
 use serde_json::Value;
 use time::OffsetDateTime;
@@ -18,6 +19,7 @@ impl PriceFeed for GateIo {
     async fn retrieve_price(&self, asset_pair: AssetPair, instant: OffsetDateTime) -> Result<f64> {
         let client = Client::new();
         let start_time = instant.unix_timestamp();
+        info!("sending gateio http request");
         let res: Vec<Vec<Value>> = client
             .get("https://api.gateio.ws/api/v4/spot/candlesticks")
             .query(&[
@@ -29,6 +31,7 @@ impl PriceFeed for GateIo {
             .await?
             .json()
             .await?;
+        info!("received response: {:#?}", res);
 
         if res.is_empty() {
             return Err(PriceFeedError::PriceNotAvailableError(asset_pair, instant));

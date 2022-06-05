@@ -1,12 +1,12 @@
 use super::{
     pricefeeds::{PriceFeed, Result as PriceFeedResult},
-    DbValue, Oracle, OracleError, Result as OracleResult,
+    DbValue, Oracle,
 };
 use chrono::Utc;
 use clokwerk::{AsyncScheduler, Job, TimeUnits};
 use core::ptr;
-use futures::stream::{self, StreamExt};
-use lightning::util::ser::Writeable;
+use futures::{stream, StreamExt};
+use log::info;
 use queues::{queue, IsQueue, Queue};
 use secp256k1_sys::{
     types::{c_int, c_uchar, c_void, size_t},
@@ -17,10 +17,8 @@ use secp256k1_zkp::{
     hashes::*,
     rand::{self, RngCore},
     schnorr::Signature as SchnorrSignature,
-    All, KeyPair, Message, Secp256k1, Signing, ThirtyTwoByteHash,
-    XOnlyPublicKey as SchnorrPublicKey,
+    All, KeyPair, Message, Secp256k1, Signing, XOnlyPublicKey as SchnorrPublicKey,
 };
-use serde::Deserialize;
 use serde_json;
 use std::sync::Arc;
 use time::{
@@ -32,147 +30,14 @@ use tokio::{
     time::sleep,
 };
 
+mod error;
+pub use error::OracleSchedulerError;
+pub use error::Result;
+
+pub mod messaging;
+use messaging::{Announcement, Attestation, OracleAnnouncementHash, OracleEvent};
+
 const SCHEDULER_SLEEP_TIME: std::time::Duration = std::time::Duration::from_millis(100);
-const ORACLE_ANNOUNCEMENT_MIDSTATE: [u8; 32] = [
-    0x83, 0x7c, 0xc9, 0x00, 0xdb, 0xfe, 0x98, 0xdf, 0x28, 0xe3, 0x32, 0x3e, 0x21, 0xcb, 0x85, 0x8f,
-    0x59, 0xb4, 0xad, 0x7a, 0xa8, 0xd6, 0xe5, 0x8c, 0xe9, 0x3f, 0x9f, 0xef, 0x80, 0xaf, 0xfb, 0x0f,
-];
-
-sha256t_hash_newtype!(
-    OracleAnnouncementHash,
-    OracleAnnouncementHashTag,
-    ORACLE_ANNOUNCEMENT_MIDSTATE,
-    64,
-    doc = "oracle announcement tagged hash",
-    true
-);
-
-impl ThirtyTwoByteHash for OracleAnnouncementHash {
-    fn into_32(self) -> [u8; 32] {
-        self.into_inner()
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct Announcement {
-    pub signature: SchnorrSignature,
-    pub oracle_pubkey: SchnorrPublicKey,
-    pub oracle_event: OracleEvent,
-}
-
-#[derive(Clone, Debug)]
-pub struct OracleEvent {
-    pub nonces: Vec<SchnorrPublicKey>,
-    pub maturation: OffsetDateTime,
-    pub event_descriptor: EventDescriptor,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-pub struct EventDescriptor {
-    pub base: u16,
-    pub is_signed: bool,
-    pub unit: String,
-    pub precision: i32,
-    pub num_digits: u16,
-}
-
-#[derive(Clone, Debug)]
-pub struct Attestation {
-    pub oracle_pubkey: SchnorrPublicKey,
-    pub signatures: Vec<SchnorrSignature>,
-    pub outcomes: Vec<String>,
-}
-
-impl From<&Announcement> for dlc_messages::oracle_msgs::OracleAnnouncement {
-    fn from(ann: &Announcement) -> Self {
-        let announcement_signature =
-            secp256k1_zkp_5::schnorrsig::Signature::from_slice(ann.signature.as_ref()).unwrap();
-        let oracle_public_key =
-            secp256k1_zkp_5::schnorrsig::PublicKey::from_slice(&ann.oracle_pubkey.serialize())
-                .unwrap();
-        let oracle_event = (&ann.oracle_event).into();
-        Self {
-            announcement_signature,
-            oracle_public_key,
-            oracle_event,
-        }
-    }
-}
-
-impl From<&OracleEvent> for dlc_messages::oracle_msgs::OracleEvent {
-    fn from(event: &OracleEvent) -> Self {
-        let oracle_nonces = event
-            .nonces
-            .iter()
-            .map(|nonce| {
-                secp256k1_zkp_5::schnorrsig::PublicKey::from_slice(&nonce.serialize()).unwrap()
-            })
-            .collect::<Vec<_>>();
-        let event_maturity_epoch = event.maturation.unix_timestamp().try_into().unwrap();
-        let event_descriptor = (&event.event_descriptor).into();
-        Self {
-            oracle_nonces,
-            event_maturity_epoch,
-            event_descriptor,
-            event_id: String::new(), // todo?
-        }
-    }
-}
-
-impl From<&EventDescriptor> for dlc_messages::oracle_msgs::EventDescriptor {
-    fn from(event: &EventDescriptor) -> Self {
-        let base = event.base;
-        let is_signed = event.is_signed;
-        let unit = event.unit.clone();
-        let precision = event.precision;
-        let nb_digits = event.num_digits;
-        let numerical_descriptor = dlc_messages::oracle_msgs::DigitDecompositionEventDescriptor {
-            base,
-            is_signed,
-            unit,
-            precision,
-            nb_digits,
-        };
-        Self::DigitDecompositionEvent(numerical_descriptor)
-    }
-}
-
-impl From<&Attestation> for dlc_messages::oracle_msgs::OracleAttestation {
-    fn from(att: &Attestation) -> Self {
-        let oracle_public_key =
-            secp256k1_zkp_5::schnorrsig::PublicKey::from_slice(&att.oracle_pubkey.serialize())
-                .unwrap();
-        let signatures = att
-            .signatures
-            .iter()
-            .map(|sig| secp256k1_zkp_5::schnorrsig::Signature::from_slice(sig.as_ref()).unwrap())
-            .collect::<Vec<_>>();
-        let outcomes = att.outcomes.to_vec();
-        Self {
-            oracle_public_key,
-            signatures,
-            outcomes,
-        }
-    }
-}
-
-impl Announcement {
-    pub fn encode(&self) -> Vec<u8> {
-        dlc_messages::oracle_msgs::OracleAnnouncement::from(self).encode()
-    }
-}
-
-impl OracleEvent {
-    pub fn encode(&self) -> Vec<u8> {
-        dlc_messages::oracle_msgs::OracleEvent::from(self).encode()
-    }
-}
-
-impl Attestation {
-    pub fn encode(&self) -> Vec<u8> {
-        dlc_messages::oracle_msgs::OracleAttestation::from(self).encode()
-    }
-}
 
 extern "C" fn constant_nonce_fn(
     nonce32: *mut c_uchar,
@@ -233,7 +98,7 @@ struct OracleScheduler {
 }
 
 impl OracleScheduler {
-    fn create_scheduler_event(&mut self) -> OracleResult<()> {
+    fn create_scheduler_event(&mut self) -> Result<()> {
         create_event(
             &mut self.oracle,
             &self.secp,
@@ -244,7 +109,8 @@ impl OracleScheduler {
         Ok(())
     }
 
-    async fn attest(&mut self) -> OracleResult<()> {
+    async fn attest(&mut self) -> Result<()> {
+        info!("retrieving pricefeeds for attestation");
         let prices = stream::iter(self.pricefeeds.iter())
             .then(|pricefeed| async {
                 pricefeed
@@ -260,6 +126,10 @@ impl OracleScheduler {
             .collect::<PriceFeedResult<Vec<_>>>()?;
         let avg_price = prices.iter().sum::<f64>() / prices.len() as f64;
         let avg_price = avg_price.round() as u32;
+        info!(
+            "average price of {} is {}",
+            self.oracle.asset_pair_info.asset_pair, avg_price
+        );
         let avg_price_binary = format!(
             "{:0width$b}",
             avg_price,
@@ -291,6 +161,10 @@ impl OracleScheduler {
             outcomes,
         };
         event_info.db_value.1 = Some(attestation.encode());
+        info!(
+            "attesting with maturation {} and attestation {:#?}",
+            self.next_attestation, attestation
+        );
         self.oracle.event_database.insert(
             self.next_attestation.format(&Rfc3339).unwrap().into_bytes(),
             serde_json::to_string(&event_info.db_value)?.into_bytes(),
@@ -306,14 +180,15 @@ pub fn init(
     pricefeeds: Vec<Box<dyn PriceFeed + Send + Sync>>,
     attestation_time: Time,
     announcement_offset: Duration,
-) -> OracleResult<()> {
+) -> Result<()> {
     if !announcement_offset.is_positive() {
-        return Err(OracleError::InvalidAnnouncementTimeError(
+        return Err(OracleSchedulerError::InvalidAnnouncementTimeError(
             announcement_offset,
         ));
     }
 
     // start event creation task
+    info!("creating oracle events and schedules");
     tokio::spawn(async move {
         let (tx, mut rx) = mpsc::unbounded_channel();
         if let Err(err) = create_events(
@@ -341,8 +216,8 @@ fn create_events(
     pricefeeds: Vec<Box<dyn PriceFeed + Send + Sync>>,
     attestation_time: Time,
     announcement_offset: Duration,
-    error_transmitter: mpsc::UnboundedSender<OracleError>,
-) -> OracleResult<()> {
+    error_transmitter: mpsc::UnboundedSender<OracleSchedulerError>,
+) -> Result<()> {
     let now = OffsetDateTime::now_utc();
     let mut next_attestation = now.replace_time(attestation_time);
     if next_attestation <= now {
@@ -351,6 +226,7 @@ fn create_events(
     let mut next_announcement = next_attestation - announcement_offset;
     let mut event_infos = queue![];
     // create all events that should have already been made
+    info!("creating events that should have already been made");
     while next_announcement <= now {
         create_event(
             &mut oracle,
@@ -369,11 +245,19 @@ fn create_events(
         next_announcement,
         next_attestation,
     }));
+    info!(
+        "created new oracle scheduler with\n\tannouncements at {}\n\tattestations at {}\n\tnext announcement at {}\n\tnext attestation at {}",
+        attestation_time - announcement_offset,
+        attestation_time,
+        next_announcement,
+        next_attestation
+    );
 
     let mut scheduler = AsyncScheduler::with_tz(Utc);
     // schedule announcements
     let error_transmitter_clone = error_transmitter.clone();
     let oracle_scheduler_clone = oracle_scheduler.clone();
+    info!("starting announcement scheduler");
     scheduler
         .every(1.day())
         .at(&(attestation_time - announcement_offset)
@@ -384,11 +268,13 @@ fn create_events(
             let error_transmitter_clone = error_transmitter_clone.clone();
             async move {
                 if let Err(err) = oracle_scheduler_clone.lock().await.create_scheduler_event() {
+                    info!("error from announcement scheduler");
                     error_transmitter_clone.send(err).unwrap();
                 }
             }
         });
     // schedule attestations
+    info!("starting attestation scheduler");
     scheduler
         .every(1.day())
         .at(&attestation_time
@@ -399,11 +285,13 @@ fn create_events(
             let error_transmitter_clone = error_transmitter.clone();
             async move {
                 if let Err(err) = oracle_scheduler_clone.lock().await.attest().await {
+                    info!("error from attestation scheduler");
                     error_transmitter_clone.send(err).unwrap();
                 }
             }
         });
     // busy checking scheduler
+    info!("starting busy checking");
     tokio::spawn(async move {
         loop {
             scheduler.run_pending().await;
@@ -418,7 +306,7 @@ fn create_event(
     secp: &Secp256k1<All>,
     event_infos: &mut Queue<EventInfo>,
     maturation: OffsetDateTime,
-) -> OracleResult<()> {
+) -> Result<()> {
     let (oracle_event, outstanding_sk_nonces) = build_oracle_event(oracle, maturation)?;
 
     let announcement = Announcement {
@@ -430,6 +318,10 @@ fn create_event(
         oracle_event,
     };
     let db_value = DbValue(announcement.encode(), None);
+    info!(
+        "creating oracle event (announcement only) with maturation {} and announcement {:#?}",
+        maturation, announcement
+    );
     oracle.event_database.insert(
         maturation.format(&Rfc3339).unwrap().into_bytes(),
         serde_json::to_string(&db_value)?.into_bytes(),
@@ -446,7 +338,7 @@ fn create_event(
 fn build_oracle_event(
     oracle: &mut Oracle,
     maturation: OffsetDateTime,
-) -> OracleResult<(OracleEvent, Vec<[u8; 32]>)> {
+) -> Result<(OracleEvent, Vec<[u8; 32]>)> {
     let secp = Secp256k1::new();
     let mut rng = rand::thread_rng();
     let digits = oracle.asset_pair_info.event_descriptor.num_digits;

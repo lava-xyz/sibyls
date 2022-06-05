@@ -1,12 +1,12 @@
 [
     {
-        "name": "BTCUSD",
+        "asset_pair": "BTCUSD",
         "event_descriptor": {
             "base": 2,
             "is_signed": false,
             "unit": "BTCUSD",
             "precision": 0,
-            "num_digits": 18,
+            "num_digits": 18
         }
     }
 ]

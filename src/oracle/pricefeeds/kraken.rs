@@ -1,6 +1,7 @@
 use super::{PriceFeed, PriceFeedError, Result};
 use crate::AssetPair;
 use async_trait::async_trait;
+use log::info;
 use reqwest::Client;
 use serde::Deserialize;
 use serde_json::Value;
@@ -9,7 +10,7 @@ use time::OffsetDateTime;
 
 pub struct Kraken {}
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 struct Response {
     error: Vec<String>,
     result: HashMap<String, Vec<Vec<Value>>>,
@@ -27,6 +28,7 @@ impl PriceFeed for Kraken {
         let client = Client::new();
         let asset_pair_translation = self.translate_asset_pair(asset_pair);
         let start_time = instant.unix_timestamp();
+        info!("sending kraken http request");
         let res: Response = client
             .get("https://api.kraken.com/0/public/OHLC")
             .query(&[
@@ -37,6 +39,7 @@ impl PriceFeed for Kraken {
             .await?
             .json()
             .await?;
+        info!("received response: {:#?}", res);
 
         if !res.error.is_empty() {
             return Err(PriceFeedError::InternalError(format!(

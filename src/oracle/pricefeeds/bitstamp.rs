@@ -1,6 +1,7 @@
 use super::{PriceFeed, PriceFeedError, Result};
 use crate::AssetPair;
 use async_trait::async_trait;
+use log::info;
 use reqwest::Client;
 use serde::Deserialize;
 use serde_json::Value;
@@ -8,19 +9,19 @@ use time::OffsetDateTime;
 
 pub struct Bitstamp {}
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 struct Response {
     code: Option<String>,
     errors: Option<Vec<Value>>,
     data: Option<OhlcData>,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 struct OhlcData {
     ohlc: Vec<Ohlc>,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 struct Ohlc {
     open: String,
 }
@@ -37,6 +38,7 @@ impl PriceFeed for Bitstamp {
         let client = Client::new();
         let asset_pair_translation = self.translate_asset_pair(asset_pair);
         let start_time = instant.unix_timestamp();
+        info!("sending bitstamp http request");
         let res: Response = client
             .get(format!(
                 "https://www.bitstamp.net/api/v2/ohlc/{}",
@@ -51,6 +53,7 @@ impl PriceFeed for Bitstamp {
             .await?
             .json()
             .await?;
+        info!("received response: {:#?}", res);
 
         if let Some(errs) = res.errors {
             return Err(PriceFeedError::InternalError(format!(

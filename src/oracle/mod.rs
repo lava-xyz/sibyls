@@ -1,10 +1,10 @@
 use crate::AssetPairInfo;
+use log::info;
 use secp256k1_zkp::KeyPair;
 use serde::{Deserialize, Serialize};
 use sled::Db;
 
-pub mod error;
-
+mod error;
 pub use error::OracleError;
 pub use error::Result;
 
@@ -22,6 +22,7 @@ impl Oracle {
     pub fn new(asset_pair_info: AssetPairInfo, keypair: KeyPair) -> Result<Oracle> {
         // setup event database
         let path = format!("events/{}", asset_pair_info.asset_pair);
+        info!("creating sled at {}", path);
         let event_database = sled::open(path)?;
 
         Ok(Oracle {
@@ -33,6 +34,6 @@ impl Oracle {
 }
 
 pub mod oracle_scheduler;
-pub use oracle_scheduler::EventDescriptor;
+pub use oracle_scheduler::messaging::EventDescriptor;
 
 pub mod pricefeeds;

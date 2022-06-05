@@ -1,3 +1,6 @@
+#[macro_use]
+extern crate log;
+
 use actix_web::{get, http::header::ContentType, web, App, HttpResponse, HttpServer};
 use clap::Parser;
 use secp256k1_zkp::{rand, KeyPair, Secp256k1, SecretKey};
@@ -17,21 +20,21 @@ use sybils::{
     oracle::{
         oracle_scheduler,
         pricefeeds::{Bitstamp, GateIo, Kraken, PriceFeed},
-        DbValue, Oracle, Result,
+        DbValue, Oracle,
     },
     AssetPair, AssetPairInfo,
 };
 
 const PAGE_SIZE: u32 = 100;
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 enum SortOrder {
     Insertion,
     ReverseInsertion,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 struct Filters {
     sort_by: SortOrder,
@@ -92,6 +95,7 @@ async fn announcements(
     oracles: web::Data<HashMap<AssetPair, Oracle>>,
     filters: web::Query<Filters>,
 ) -> HttpResponse {
+    info!("GET /announcements: {:#?}", filters);
     let execute_announcements = || {
         let oracle = match oracles.get(&filters.asset_pair) {
             None => {
@@ -104,6 +108,7 @@ async fn announcements(
         };
 
         if oracle.event_database.is_empty() {
+            info!("no oracle events found");
             return make_api_response(Some(Vec::<ApiOracleEvent>::new()), None);
         }
 
@@ -120,6 +125,11 @@ async fn announcements(
                 let end_key = end_key.format(&Rfc3339).unwrap().into_bytes();
                 if init_key == oracle.event_database.first()?.unwrap().0 {
                     // don't know if range can change while iterating due to another thread modifying
+                    info!(
+                        "retrieving oracle events from {} to {}",
+                        String::from_utf8_lossy(&start_key),
+                        String::from_utf8_lossy(&end_key),
+                    );
                     return make_api_response(
                         Some(
                             oracle
@@ -144,6 +154,11 @@ async fn announcements(
                 let end_key = end_key.format(&Rfc3339).unwrap().into_bytes();
                 if init_key == oracle.event_database.last()?.unwrap().0 {
                     // don't know if range can change while iterating due to another thread modifying
+                    info!(
+                        "retrieving oracle events from {} to {}",
+                        String::from_utf8_lossy(&start_key),
+                        String::from_utf8_lossy(&end_key),
+                    );
                     return make_api_response(
                         Some(
                             oracle
@@ -185,43 +200,67 @@ const ANNOUNCEMENT_OFFSET: Duration = Duration::hours(176);
 
 #[actix_web::main]
 async fn main() -> anyhow::Result<()> {
+    env_logger::init();
+
     let args = Args::parse();
 
     let mut secret_key = String::new();
     let secp = Secp256k1::new();
 
     let secret_key = match args.secret_key_file {
-        None => secp.generate_keypair(&mut rand::thread_rng()).0,
+        None => {
+            info!("no secret key file was found, generating secret key");
+            secp.generate_keypair(&mut rand::thread_rng()).0
+        }
         Some(path) => {
+            info!(
+                "reading secret key from {}",
+                path.as_os_str().to_string_lossy()
+            );
             File::open(path)?.read_to_string(&mut secret_key)?;
             SecretKey::from_str(&secret_key)?
         }
     };
     let keypair = KeyPair::from_secret_key(&secp, secret_key);
+    info!("oracle keypair successfully generated");
 
     let asset_pair_infos: Vec<AssetPairInfo> = match args.asset_pair_config_file {
-        None => serde_json::from_str(&fs::read_to_string("config/asset_pair.json")?)?,
+        None => {
+            info!("reading asset pair config from config/asset_pair.json");
+            serde_json::from_str(&fs::read_to_string("config/asset_pair.json")?)?
+        }
         Some(path) => {
+            info!(
+                "reading asset pair config from {}",
+                path.as_os_str().to_string_lossy()
+            );
             let mut asset_pair_info = String::new();
             File::open(path)?.read_to_string(&mut asset_pair_info)?;
             serde_json::from_str(&asset_pair_info)?
         }
     };
+    info!("asset pair config successfully read");
 
     // setup event databases
     let oracles = asset_pair_infos
         .iter()
         .map(|asset_pair_info| asset_pair_info.asset_pair)
         .zip(asset_pair_infos.iter().cloned().map(|asset_pair_info| {
+            let asset_pair = asset_pair_info.asset_pair;
+
+            // create oracle
+            info!("creating oracle for {}", asset_pair);
             let oracle = Oracle::new(asset_pair_info, keypair)?;
 
             // pricefeed retreival
+            info!("creating pricefeeds for {}", asset_pair);
             let pricefeeds: Vec<Box<dyn PriceFeed + Send + Sync>> = vec![
                 Box::new(Bitstamp {}),
                 Box::new(GateIo {}),
                 Box::new(Kraken {}),
             ];
 
+            info!("scheduling oracle events for {}", asset_pair);
             // schedule oracle events (announcements/attestations)
             oracle_scheduler::init(
                 oracle.clone(),
@@ -234,9 +273,10 @@ async fn main() -> anyhow::Result<()> {
             Ok(oracle)
         }))
         .map(|(asset_pair, oracle)| oracle.map(|ok| (asset_pair, ok)))
-        .collect::<Result<HashMap<_, _>>>()?;
+        .collect::<anyhow::Result<HashMap<_, _>>>()?;
 
     // setup and run server
+    info!("starting server");
     HttpServer::new(move || {
         App::new()
             .app_data(web::Data::new(oracles.clone()))
