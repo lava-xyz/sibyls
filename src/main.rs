@@ -223,8 +223,8 @@ async fn main() -> anyhow::Result<()> {
     };
     let keypair = KeyPair::from_secret_key(&secp, secret_key);
     info!(
-        "oracle keypair successfully generated, pubkey is {:?}",
-        keypair.public_key().serialize()
+        "oracle keypair successfully generated, pubkey is {}",
+        keypair.public_key().serialize().encode_hex::<String>()
     );
 
     let asset_pair_infos: Vec<AssetPairInfo> = match args.asset_pair_config_file {
