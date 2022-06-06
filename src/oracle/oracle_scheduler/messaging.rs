@@ -1,4 +1,4 @@
-use lightning::util::ser::Writeable;
+use lightning::util::ser::{Writeable, Writer};
 use secp256k1_zkp::{
     hashes::*, schnorr::Signature as SchnorrSignature, ThirtyTwoByteHash,
     XOnlyPublicKey as SchnorrPublicKey,
@@ -129,9 +129,39 @@ impl From<&Attestation> for dlc_messages::oracle_msgs::OracleAttestation {
     }
 }
 
+struct BigSize(u64);
+impl Writeable for BigSize {
+    #[inline]
+    fn write<W: Writer>(&self, writer: &mut W) -> std::io::Result<()> {
+        match self.0 {
+            0..=0xFC => (self.0 as u8).write(writer),
+            0xFD..=0xFFFF => {
+                0xFDu8.write(writer)?;
+                (self.0 as u16).write(writer)
+            }
+            0x10000..=0xFFFFFFFF => {
+                0xFEu8.write(writer)?;
+                (self.0 as u32).write(writer)
+            }
+            _ => {
+                0xFFu8.write(writer)?;
+                (self.0 as u64).write(writer)
+            }
+        }
+    }
+}
+
 impl Announcement {
     pub fn encode(&self) -> Vec<u8> {
-        dlc_messages::oracle_msgs::OracleAnnouncement::from(self).encode()
+        let mut out = vec![];
+        BigSize(55332_u64).write(&mut out).unwrap();
+        let v = dlc_messages::oracle_msgs::OracleAnnouncement::from(self).encode();
+        BigSize(v.serialized_length() as u64)
+            .write(&mut out)
+            .unwrap();
+        // extend manually for announcement to be consistent w suredbits
+        out.extend_from_slice(&v);
+        out
     }
 }
 
@@ -152,6 +182,7 @@ mod tests {
     use super::*;
     use time::format_description::well_known::Rfc3339;
 
+    // does not work yet because suredbits and tibo's implementations must be unified first
     #[ignore]
     #[test]
     fn suredbits_announcement_encodes_correctly() {
