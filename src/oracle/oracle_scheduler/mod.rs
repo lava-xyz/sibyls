@@ -308,7 +308,7 @@ fn create_event(
     event_infos: &mut Queue<EventInfo>,
     maturation: OffsetDateTime,
 ) -> Result<()> {
-    let (oracle_event, outstanding_sk_nonces) = build_oracle_event(oracle, maturation)?;
+    let (oracle_event, outstanding_sk_nonces) = build_oracle_event(oracle, secp, maturation)?;
 
     let announcement = Announcement {
         signature: secp.sign_schnorr(
@@ -338,9 +338,9 @@ fn create_event(
 
 fn build_oracle_event(
     oracle: &mut Oracle,
+    secp: &Secp256k1<All>,
     maturation: OffsetDateTime,
 ) -> Result<(OracleEvent, Vec<[u8; 32]>)> {
-    let secp = Secp256k1::new();
     let mut rng = rand::thread_rng();
     let digits = oracle.asset_pair_info.event_descriptor.num_digits;
     let mut sk_nonces = Vec::with_capacity(digits.into());
@@ -348,7 +348,7 @@ fn build_oracle_event(
     for _ in 0..digits {
         let mut sk_nonce = [0u8; 32];
         rng.fill_bytes(&mut sk_nonce);
-        let oracle_r_kp = secp256k1_zkp::KeyPair::from_seckey_slice(&secp, &sk_nonce)?;
+        let oracle_r_kp = secp256k1_zkp::KeyPair::from_seckey_slice(secp, &sk_nonce)?;
         let nonce = SchnorrPublicKey::from_keypair(&oracle_r_kp);
         sk_nonces.push(sk_nonce);
         nonces.push(nonce);
