@@ -58,7 +58,7 @@ struct ApiOracleEvent {
     announcement: String,
     attestation: Option<String>,
     maturation: String,
-    outcome: bool,
+    outcome: Option<u64>,
 }
 
 fn make_api_response<T: Serialize>(
@@ -80,13 +80,12 @@ fn parse_database_entry(
 ) -> ApiOracleEvent {
     let maturation = String::from_utf8_lossy(&maturation).to_string();
     let event: DbValue = serde_json::from_str(&String::from_utf8_lossy(&event)).unwrap();
-    let outcome = event.1.is_some();
     ApiOracleEvent {
         asset_pair,
         announcement: event.0.encode_hex::<String>(),
         attestation: event.1.map(|att| att.encode_hex::<String>()),
         maturation,
-        outcome,
+        outcome: event.2,
     }
 }
 

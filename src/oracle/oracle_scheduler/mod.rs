@@ -125,7 +125,7 @@ impl OracleScheduler {
             .into_iter()
             .collect::<PriceFeedResult<Vec<_>>>()?;
         let avg_price = prices.iter().sum::<f64>() / prices.len() as f64;
-        let avg_price = avg_price.round() as u32;
+        let avg_price = avg_price.round() as u64;
         info!(
             "average price of {} is {}",
             self.oracle.asset_pair_info.asset_pair, avg_price
@@ -161,6 +161,7 @@ impl OracleScheduler {
             outcomes,
         };
         event_info.db_value.1 = Some(attestation.encode());
+        event_info.db_value.2 = Some(avg_price);
         info!(
             "attesting with maturation {} and attestation {:#?}",
             self.next_attestation, attestation
@@ -317,7 +318,7 @@ fn create_event(
         oracle_pubkey: oracle.keypair.public_key(),
         oracle_event,
     };
-    let db_value = DbValue(announcement.encode(), None);
+    let db_value = DbValue(announcement.encode(), None, None);
     info!(
         "creating oracle event (announcement only) with maturation {} and announcement {:#?}",
         maturation, announcement

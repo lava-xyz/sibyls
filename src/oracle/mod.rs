@@ -9,7 +9,8 @@ pub use error::OracleError;
 pub use error::Result;
 
 #[derive(Clone, Deserialize, Serialize)]
-pub struct DbValue(pub Vec<u8>, pub Option<Vec<u8>>);
+// announcement, attetstation?, outcome?
+pub struct DbValue(pub Vec<u8>, pub Option<Vec<u8>>, pub Option<u64>);
 
 #[derive(Clone)]
 pub struct Oracle {
