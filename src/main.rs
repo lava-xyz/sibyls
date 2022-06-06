@@ -218,6 +218,7 @@ async fn main() -> anyhow::Result<()> {
                 path.as_os_str().to_string_lossy()
             );
             File::open(path)?.read_to_string(&mut secret_key)?;
+            secret_key.retain(|c| !c.is_whitespace());
             SecretKey::from_str(&secret_key)?
         }
     };
