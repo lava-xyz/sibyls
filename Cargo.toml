@@ -31,3 +31,6 @@ sled = "0.34"
 thiserror = "1.0.31"
 time = { version = "0.3.9", features = ["formatting"] }
 tokio = { version = "1.18.2", features = ["full"] }
+
+[dev-dependencies]
+dlc = { git = "https://github.com/p2pderivatives/rust-dlc" }

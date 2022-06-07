@@ -2,6 +2,7 @@ use super::{
     pricefeeds::{PriceFeed, Result as PriceFeedResult},
     DbValue, Oracle,
 };
+use crate::AssetPairInfo;
 use chrono::Utc;
 use clokwerk::{AsyncScheduler, Job, TimeUnits};
 use core::ptr;
@@ -143,23 +144,13 @@ impl OracleScheduler {
             .event_infos
             .remove()
             .expect("event_infos should never be empty");
-        let signatures = outcomes
-            .iter()
-            .zip(event_info.outstanding_sk_nonces.iter())
-            .map(|(outcome, outstanding_sk_nonce)| {
-                sign_schnorr_with_nonce(
-                    &self.secp,
-                    &Message::from_hashed_data::<sha256::Hash>(outcome.as_bytes()),
-                    &self.oracle.keypair,
-                    outstanding_sk_nonce,
-                )
-            })
-            .collect::<Vec<_>>();
-        let attestation = Attestation {
-            oracle_pubkey: self.oracle.keypair.public_key(),
-            signatures,
+        let attestation = build_attestation(
+            event_info.outstanding_sk_nonces,
+            &self.oracle.keypair,
+            &self.secp,
             outcomes,
-        };
+        );
+
         event_info.db_value.1 = Some(attestation.encode());
         event_info.db_value.2 = Some(avg_price);
         info!(
@@ -308,16 +299,9 @@ fn create_event(
     event_infos: &mut Queue<EventInfo>,
     maturation: OffsetDateTime,
 ) -> Result<()> {
-    let (oracle_event, outstanding_sk_nonces) = build_oracle_event(oracle, secp, maturation)?;
+    let (announcement, outstanding_sk_nonces) =
+        build_announcement(&oracle.asset_pair_info, &oracle.keypair, secp, maturation)?;
 
-    let announcement = Announcement {
-        signature: secp.sign_schnorr(
-            &Message::from_hashed_data::<OracleAnnouncementHash>(&oracle_event.encode()),
-            &oracle.keypair,
-        ),
-        oracle_pubkey: oracle.keypair.public_key(),
-        oracle_event,
-    };
     let db_value = DbValue(announcement.encode(), None, None);
     info!(
         "creating oracle event (announcement only) with maturation {} and announcement {:#?}",
@@ -336,13 +320,14 @@ fn create_event(
     Ok(())
 }
 
-fn build_oracle_event(
-    oracle: &mut Oracle,
+fn build_announcement(
+    asset_pair_info: &AssetPairInfo,
+    keypair: &KeyPair,
     secp: &Secp256k1<All>,
     maturation: OffsetDateTime,
-) -> Result<(OracleEvent, Vec<[u8; 32]>)> {
+) -> Result<(Announcement, Vec<[u8; 32]>)> {
     let mut rng = rand::thread_rng();
-    let digits = oracle.asset_pair_info.event_descriptor.num_digits;
+    let digits = asset_pair_info.event_descriptor.num_digits;
     let mut sk_nonces = Vec::with_capacity(digits.into());
     let mut nonces = Vec::with_capacity(digits.into());
     for _ in 0..digits {
@@ -353,12 +338,233 @@ fn build_oracle_event(
         sk_nonces.push(sk_nonce);
         nonces.push(nonce);
     }
+
+    let oracle_event = OracleEvent {
+        nonces,
+        maturation,
+        event_descriptor: asset_pair_info.event_descriptor.clone(),
+    };
+
     Ok((
-        OracleEvent {
-            nonces,
-            maturation,
-            event_descriptor: oracle.asset_pair_info.event_descriptor.clone(),
+        Announcement {
+            signature: secp.sign_schnorr(
+                &Message::from_hashed_data::<OracleAnnouncementHash>(&oracle_event.encode()),
+                keypair,
+            ),
+            oracle_pubkey: keypair.public_key(),
+            oracle_event,
         },
         sk_nonces,
     ))
+}
+
+fn build_attestation(
+    outstanding_sk_nonces: Vec<[u8; 32]>,
+    keypair: &KeyPair,
+    secp: &Secp256k1<All>,
+    outcomes: Vec<String>,
+) -> Attestation {
+    let signatures = outcomes
+        .iter()
+        .zip(outstanding_sk_nonces.iter())
+        .map(|(outcome, outstanding_sk_nonce)| {
+            sign_schnorr_with_nonce(
+                secp,
+                &Message::from_hashed_data::<sha256::Hash>(outcome.as_bytes()),
+                keypair,
+                outstanding_sk_nonce,
+            )
+        })
+        .collect::<Vec<_>>();
+    Attestation {
+        oracle_pubkey: keypair.public_key(),
+        signatures,
+        outcomes,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{oracle::EventDescriptor, AssetPair};
+    use dlc::OracleInfo;
+    use secp256k1_zkp::rand::{distributions::Alphanumeric, Rng};
+
+    fn setup() -> (KeyPair, Secp256k1<All>) {
+        let secp = Secp256k1::new();
+        let mut rng = rand::thread_rng();
+        let (secret_key, _) = secp.generate_keypair(&mut rng);
+        (KeyPair::from_secret_key(&secp, secret_key), secp)
+    }
+
+    fn setup_v5() -> (
+        secp256k1_zkp_5::SecretKey,
+        secp256k1_zkp_5::PublicKey,
+        secp256k1_zkp_5::Secp256k1<secp256k1_zkp_5::All>,
+    ) {
+        let secp = secp256k1_zkp_5::Secp256k1::new();
+        let mut rng = rand::thread_rng();
+        let (secret_key, public_key) = secp.generate_keypair(&mut rng);
+        (secret_key, public_key, secp)
+    }
+
+    fn signatures_to_secret(signatures: &[SchnorrSignature]) -> secp256k1_zkp_5::SecretKey {
+        let s_values: Vec<&[u8]> = signatures
+            .iter()
+            .map(|x| {
+                let bytes = x.as_ref();
+                &bytes[32..64]
+            })
+            .collect();
+        let mut secret = secp256k1_zkp_5::SecretKey::from_slice(s_values[0]).unwrap();
+        for s in s_values.iter().skip(1) {
+            secret.add_assign(s).unwrap();
+        }
+
+        secret
+    }
+
+    #[test]
+    fn announcement_signature_verifies() {
+        let (keypair, secp) = setup();
+
+        let announcement = build_announcement(
+            &AssetPairInfo {
+                asset_pair: AssetPair::BTCUSD,
+                event_descriptor: EventDescriptor {
+                    base: 2,
+                    is_signed: false,
+                    unit: "BTCUSD".to_string(),
+                    precision: 0,
+                    num_digits: 18,
+                },
+            },
+            &keypair,
+            &secp,
+            OffsetDateTime::now_utc(),
+        )
+        .unwrap()
+        .0;
+
+        let tag_hash = sha256::Hash::hash(b"DLC/oracle/announcement/v0");
+        secp.verify_schnorr(
+            &announcement.signature,
+            &Message::from_hashed_data::<sha256::Hash>(
+                &[
+                    tag_hash.to_vec(),
+                    tag_hash.to_vec(),
+                    announcement.oracle_event.encode(),
+                ]
+                .concat(),
+            ),
+            &keypair.public_key(),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn attestation_signature_verifies() {
+        let (keypair, secp) = setup();
+
+        let mut outstanding_sk_nonce = vec![[0u8; 32]];
+        let mut rng = rand::thread_rng();
+        rng.fill_bytes(&mut outstanding_sk_nonce[0]);
+        let outcome = rng
+            .sample_iter(&Alphanumeric)
+            .take(32)
+            .map(char::from)
+            .collect();
+        let outcome = vec![outcome];
+        let attestation = build_attestation(outstanding_sk_nonce, &keypair, &secp, outcome);
+        secp.verify_schnorr(
+            &attestation.signatures[0],
+            &Message::from_hashed_data::<sha256::Hash>(attestation.outcomes[0].as_bytes()),
+            &keypair.public_key(),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn valid_adaptor_signature() {
+        let (keypair, secp) = setup();
+
+        let (announcement, outstanding_sk_nonces) = build_announcement(
+            &AssetPairInfo {
+                asset_pair: AssetPair::BTCUSD,
+                event_descriptor: EventDescriptor {
+                    base: 2,
+                    is_signed: false,
+                    unit: "BTCUSD".to_string(),
+                    precision: 0,
+                    num_digits: 18,
+                },
+            },
+            &keypair,
+            &secp,
+            OffsetDateTime::now_utc(),
+        )
+        .unwrap();
+
+        let outcomes: Vec<String> = vec![
+            "0", "0", "0", "1", "1", "1", "0", "1", "0", "0", "0", "1", "0", "1", "0", "0", "0",
+            "1",
+        ]
+        .iter()
+        .map(ToString::to_string)
+        .collect();
+        let attestation =
+            build_attestation(outstanding_sk_nonces, &keypair, &secp, outcomes.clone());
+
+        let (funding_secret_key, funding_public_key, secp_5) = setup_v5();
+
+        let adaptor_point = dlc::get_adaptor_point_from_oracle_info(
+            &secp_5,
+            &[OracleInfo {
+                public_key: secp256k1_zkp_5::schnorrsig::PublicKey::from_slice(
+                    &keypair.public_key().serialize(),
+                )
+                .unwrap(),
+                nonces: announcement
+                    .oracle_event
+                    .nonces
+                    .iter()
+                    .map(|nonce| {
+                        secp256k1_zkp_5::schnorrsig::PublicKey::from_slice(&nonce.serialize())
+                            .unwrap()
+                    })
+                    .collect(),
+            }],
+            &[outcomes
+                .iter()
+                .map(|outcome| {
+                    secp256k1_zkp_5::Message::from_hashed_data::<
+                        secp256k1_zkp_5::bitcoin_hashes::sha256::Hash,
+                    >(outcome.as_bytes())
+                })
+                .collect::<Vec<_>>()],
+        )
+        .unwrap();
+
+        let test_msg = secp256k1_zkp_5::Message::from_hashed_data::<
+            secp256k1_zkp_5::bitcoin_hashes::sha256::Hash,
+        >("test".as_bytes());
+        let adaptor_sig = secp256k1_zkp_5::EcdsaAdaptorSignature::encrypt(
+            &secp_5,
+            &test_msg,
+            &funding_secret_key,
+            &adaptor_point,
+        );
+
+        adaptor_sig
+            .verify(&secp_5, &test_msg, &funding_public_key, &adaptor_point)
+            .unwrap();
+
+        let adapted_sig = adaptor_sig
+            .decrypt(&signatures_to_secret(&attestation.signatures))
+            .unwrap();
+
+        secp_5
+            .verify(&test_msg, &adapted_sig, &funding_public_key)
+            .unwrap();
+    }
 }

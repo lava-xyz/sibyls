@@ -1820,6 +1820,7 @@ dependencies = [
  "clap",
  "clokwerk",
  "displaydoc",
+ "dlc",
  "dlc-messages",
  "env_logger",
  "futures",
