@@ -82,10 +82,10 @@ fn parse_database_entry(
     let event: DbValue = serde_json::from_str(&String::from_utf8_lossy(&event)).unwrap();
     ApiOracleEvent {
         asset_pair,
-        announcement: event.0.encode_hex::<String>(),
-        attestation: event.1.map(|att| att.encode_hex::<String>()),
+        announcement: event.1.encode_hex::<String>(),
+        attestation: event.2.map(|att| att.encode_hex::<String>()),
         maturation,
-        outcome: event.2,
+        outcome: event.3,
     }
 }
 

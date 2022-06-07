@@ -82,18 +82,12 @@ fn sign_schnorr_with_nonce<S: Signing>(
     }
 }
 
-#[derive(Clone)]
-struct EventInfo {
-    outstanding_sk_nonces: Vec<[u8; 32]>,
-    db_value: DbValue,
-}
-
 struct OracleScheduler {
     oracle: Oracle,
     secp: Secp256k1<All>,
     pricefeeds: Vec<Box<dyn PriceFeed + Send + Sync>>,
     announcement_offset: Duration,
-    event_infos: Queue<EventInfo>,
+    db_values: Queue<DbValue>,
     next_announcement: OffsetDateTime,
     next_attestation: OffsetDateTime,
 }
@@ -103,7 +97,7 @@ impl OracleScheduler {
         create_event(
             &mut self.oracle,
             &self.secp,
-            &mut self.event_infos,
+            &mut self.db_values,
             self.next_announcement + self.announcement_offset,
         )?;
         self.next_announcement += Duration::DAY;
@@ -140,26 +134,29 @@ impl OracleScheduler {
             .chars()
             .map(|char| char.to_string())
             .collect::<Vec<_>>();
-        let mut event_info = self
-            .event_infos
+        let mut db_value = self
+            .db_values
             .remove()
-            .expect("event_infos should never be empty");
+            .expect("db_values should never be empty");
         let attestation = build_attestation(
-            event_info.outstanding_sk_nonces,
+            db_value
+                .0
+                .take()
+                .expect("immature db_values should always have outstanding_sk_nonces"),
             &self.oracle.keypair,
             &self.secp,
             outcomes,
         );
 
-        event_info.db_value.1 = Some(attestation.encode());
-        event_info.db_value.2 = Some(avg_price);
+        db_value.2 = Some(attestation.encode());
+        db_value.3 = Some(avg_price);
         info!(
             "attesting with maturation {} and attestation {:#?}",
             self.next_attestation, attestation
         );
         self.oracle.event_database.insert(
             self.next_attestation.format(&Rfc3339).unwrap().into_bytes(),
-            serde_json::to_string(&event_info.db_value)?.into_bytes(),
+            serde_json::to_string(&db_value)?.into_bytes(),
         )?;
         self.next_attestation += Duration::DAY;
         Ok(())
@@ -216,16 +213,26 @@ fn create_events(
         next_attestation += Duration::DAY;
     }
     let mut next_announcement = next_attestation - announcement_offset;
-    let mut event_infos = queue![];
+    let mut db_values = queue![];
     // create all events that should have already been made
     info!("creating events that should have already been made");
     while next_announcement <= now {
-        create_event(
-            &mut oracle,
-            &secp,
-            &mut event_infos,
-            next_announcement + announcement_offset,
-        )?;
+        let next_attestation = next_announcement + announcement_offset;
+        match oracle
+            .event_database
+            .get(next_attestation.format(&Rfc3339).unwrap())?
+        {
+            None => create_event(&mut oracle, &secp, &mut db_values, next_attestation)?,
+            Some(val) => {
+                info!(
+                    "existing oracle event found in db with maturation {}, skipping creation",
+                    next_attestation
+                );
+                db_values
+                    .add(serde_json::from_str(&String::from_utf8_lossy(&val))?)
+                    .unwrap();
+            }
+        };
         next_announcement += Duration::DAY;
     }
     let oracle_scheduler = Arc::new(Mutex::new(OracleScheduler {
@@ -233,7 +240,7 @@ fn create_events(
         secp,
         pricefeeds,
         announcement_offset,
-        event_infos,
+        db_values,
         next_announcement,
         next_attestation,
     }));
@@ -296,13 +303,18 @@ fn create_events(
 fn create_event(
     oracle: &mut Oracle,
     secp: &Secp256k1<All>,
-    event_infos: &mut Queue<EventInfo>,
+    db_values: &mut Queue<DbValue>,
     maturation: OffsetDateTime,
 ) -> Result<()> {
     let (announcement, outstanding_sk_nonces) =
         build_announcement(&oracle.asset_pair_info, &oracle.keypair, secp, maturation)?;
 
-    let db_value = DbValue(announcement.encode(), None, None);
+    let db_value = DbValue(
+        Some(outstanding_sk_nonces),
+        announcement.encode(),
+        None,
+        None,
+    );
     info!(
         "creating oracle event (announcement only) with maturation {} and announcement {:#?}",
         maturation, announcement
@@ -311,12 +323,7 @@ fn create_event(
         maturation.format(&Rfc3339).unwrap().into_bytes(),
         serde_json::to_string(&db_value)?.into_bytes(),
     )?;
-    event_infos
-        .add(EventInfo {
-            outstanding_sk_nonces,
-            db_value,
-        })
-        .unwrap();
+    db_values.add(db_value).unwrap();
     Ok(())
 }
 
