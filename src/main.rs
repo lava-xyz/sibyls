@@ -61,17 +61,14 @@ struct ApiOracleEvent {
     outcome: Option<u64>,
 }
 
-fn make_api_response<T: Serialize>(
-    result: Option<T>,
-    error: Option<String>,
-) -> anyhow::Result<HttpResponse> {
-    Ok(HttpResponse::Ok().content_type(ContentType::json()).body(
+fn make_api_response<T: Serialize>(result: Option<T>, error: Option<String>) -> HttpResponse {
+    HttpResponse::Ok().content_type(ContentType::json()).body(
         json!({
             "result": result,
             "error": error,
         })
         .to_string(),
-    ))
+    )
 }
 
 fn parse_database_entry(
@@ -95,20 +92,20 @@ async fn announcements(
     filters: web::Query<Filters>,
 ) -> HttpResponse {
     info!("GET /announcements: {:#?}", filters);
-    let execute_announcements = || {
+    let execute_announcements = || -> anyhow::Result<HttpResponse> {
         let oracle = match oracles.get(&filters.asset_pair) {
             None => {
-                return make_api_response::<String>(
+                return Ok(make_api_response::<String>(
                     None,
                     Some(format!("asset pair {} not recorded", filters.asset_pair)),
-                )
+                ))
             }
             Some(val) => val,
         };
 
         if oracle.event_database.is_empty() {
             info!("no oracle events found");
-            return make_api_response(Some(Vec::<ApiOracleEvent>::new()), None);
+            return Ok(make_api_response(Some(Vec::<ApiOracleEvent>::new()), None));
         }
 
         let start = filters.page * PAGE_SIZE;
@@ -129,7 +126,7 @@ async fn announcements(
                         String::from_utf8_lossy(&start_key),
                         String::from_utf8_lossy(&end_key),
                     );
-                    return make_api_response(
+                    return Ok(make_api_response(
                         Some(
                             oracle
                                 .event_database
@@ -140,7 +137,7 @@ async fn announcements(
                                 .collect::<Vec<_>>(),
                         ),
                         None,
-                    );
+                    ));
                 }
             },
             SortOrder::ReverseInsertion => loop {
@@ -158,7 +155,7 @@ async fn announcements(
                         String::from_utf8_lossy(&start_key),
                         String::from_utf8_lossy(&end_key),
                     );
-                    return make_api_response(
+                    return Ok(make_api_response(
                         Some(
                             oracle
                                 .event_database
@@ -169,7 +166,7 @@ async fn announcements(
                                 .collect::<Vec<_>>(),
                         ),
                         None,
-                    );
+                    ));
                 }
             },
         }
@@ -177,7 +174,7 @@ async fn announcements(
 
     match execute_announcements() {
         Ok(val) => val,
-        Err(err) => HttpResponse::InternalServerError().body(err.to_string()),
+        Err(err) => make_api_response::<String>(None, Some(err.to_string())),
     }
 }
 
