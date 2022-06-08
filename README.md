@@ -5,6 +5,8 @@ a numeric (and extensible) oracle implementation for bitcoin
 
 ## API Description
 
+A working version of this oracle is hosted at https://oracle.lava.xyz/.
+
 ### List all oracle events (announcements)
 
 ```sh
