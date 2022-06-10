@@ -569,8 +569,9 @@ dependencies = [
 
 [[package]]
 name = "dlc"
-version = "0.1.0"
-source = "git+https://github.com/p2pderivatives/rust-dlc#2c30077467351d5adc6f3fe92ff550b93e082684"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1642ecf16a65702e5d8c41c74d371a099f4de5df0bb48258a1ed1a5e016daa8a"
 dependencies = [
  "bitcoin",
  "secp256k1-sys 0.4.1",
@@ -579,8 +580,9 @@ dependencies = [
 
 [[package]]
 name = "dlc-messages"
-version = "0.1.0"
-source = "git+https://github.com/p2pderivatives/rust-dlc#2c30077467351d5adc6f3fe92ff550b93e082684"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2e59cf3cc712797390aabe00911bdeddd4aa1060790f234b647958cadbb53fb6"
 dependencies = [
  "bitcoin",
  "dlc",

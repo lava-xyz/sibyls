@@ -13,7 +13,7 @@ chrono = "0.4"
 clap = { version = "3.1.18", features = ["derive"] }
 clokwerk = "0.4.0-rc1"
 displaydoc = "0.2"
-dlc-messages = { git = "https://github.com/p2pderivatives/rust-dlc" }
+dlc-messages = "0.2.0"
 env_logger = "0.9.0"
 futures = "0.3.21"
 hex = "0.4"
@@ -33,4 +33,4 @@ time = { version = "0.3.9", features = ["formatting"] }
 tokio = { version = "1.18.2", features = ["full"] }
 
 [dev-dependencies]
-dlc = { git = "https://github.com/p2pderivatives/rust-dlc" }
+dlc = "0.2.0"
