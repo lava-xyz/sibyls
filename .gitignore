@@ -3,3 +3,5 @@
 .DS_STORE
 
 /events
+
+nohup.out
