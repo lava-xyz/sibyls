@@ -2,6 +2,7 @@
 extern crate log;
 
 use actix_web::{get, http::header::ContentType, web, App, HttpResponse, HttpServer};
+use anyhow::anyhow;
 use clap::Parser;
 use secp256k1_zkp::{rand, KeyPair, Secp256k1, SecretKey};
 use serde::{Deserialize, Serialize};
@@ -86,93 +87,149 @@ fn parse_database_entry(
     }
 }
 
+fn execute_announcements(
+    oracles: &HashMap<AssetPair, Oracle>,
+    filters: &Filters,
+) -> anyhow::Result<HttpResponse> {
+    let oracle = match oracles.get(&filters.asset_pair) {
+        None => {
+            return Ok(make_api_response::<String>(
+                None,
+                Some(format!("asset pair {} not recorded", filters.asset_pair)),
+            ))
+        }
+        Some(val) => val,
+    };
+
+    if oracle.event_database.is_empty() {
+        info!("no oracle events found");
+        return Ok(make_api_response(Some(Vec::<ApiOracleEvent>::new()), None));
+    }
+
+    let start = filters.page * PAGE_SIZE;
+
+    match filters.sort_by {
+        SortOrder::Insertion => loop {
+            let init_key = oracle.event_database.first()?.unwrap().0;
+            let start_key = OffsetDateTime::parse(&String::from_utf8_lossy(&init_key), &Rfc3339)
+                .unwrap()
+                + Duration::days(start.into());
+            let end_key = start_key + Duration::days(PAGE_SIZE.into());
+            let start_key = start_key.format(&Rfc3339).unwrap().into_bytes();
+            let end_key = end_key.format(&Rfc3339).unwrap().into_bytes();
+            if init_key == oracle.event_database.first()?.unwrap().0 {
+                // don't know if range can change while iterating due to another thread modifying
+                info!(
+                    "retrieving oracle events from {} to {}",
+                    String::from_utf8_lossy(&start_key),
+                    String::from_utf8_lossy(&end_key),
+                );
+                return Ok(make_api_response(
+                    Some(
+                        oracle
+                            .event_database
+                            .range(start_key..end_key)
+                            .map(|result| parse_database_entry(filters.asset_pair, result.unwrap()))
+                            .collect::<Vec<_>>(),
+                    ),
+                    None,
+                ));
+            }
+        },
+        SortOrder::ReverseInsertion => loop {
+            let init_key = oracle.event_database.last()?.unwrap().0;
+            let end_key = OffsetDateTime::parse(&String::from_utf8_lossy(&init_key), &Rfc3339)
+                .unwrap()
+                - Duration::days(start.into());
+            let start_key = end_key - Duration::days(PAGE_SIZE.into());
+            let start_key = start_key.format(&Rfc3339).unwrap().into_bytes();
+            let end_key = end_key.format(&Rfc3339).unwrap().into_bytes();
+            if init_key == oracle.event_database.last()?.unwrap().0 {
+                // don't know if range can change while iterating due to another thread modifying
+                info!(
+                    "retrieving oracle events from {} to {}",
+                    String::from_utf8_lossy(&start_key),
+                    String::from_utf8_lossy(&end_key),
+                );
+                return Ok(make_api_response(
+                    Some(
+                        oracle
+                            .event_database
+                            .range(start_key..end_key)
+                            .map(|result| parse_database_entry(filters.asset_pair, result.unwrap()))
+                            .collect::<Vec<_>>(),
+                    ),
+                    None,
+                ));
+            }
+        },
+    }
+}
+
 #[get("/announcements")]
 async fn announcements(
     oracles: web::Data<HashMap<AssetPair, Oracle>>,
     filters: web::Query<Filters>,
 ) -> HttpResponse {
     info!("GET /announcements: {:#?}", filters);
-    let execute_announcements = || -> anyhow::Result<HttpResponse> {
-        let oracle = match oracles.get(&filters.asset_pair) {
-            None => {
-                return Ok(make_api_response::<String>(
-                    None,
-                    Some(format!("asset pair {} not recorded", filters.asset_pair)),
-                ))
-            }
-            Some(val) => val,
-        };
+    match execute_announcements(&oracles, &filters) {
+        Ok(val) => val,
+        Err(err) => make_api_response::<String>(None, Some(err.to_string())),
+    }
+}
 
-        if oracle.event_database.is_empty() {
-            info!("no oracle events found");
-            return Ok(make_api_response(Some(Vec::<ApiOracleEvent>::new()), None));
+fn execute_announcement(
+    oracles: &HashMap<AssetPair, Oracle>,
+    filters: &Filters,
+    rfc3339_time: &str,
+) -> anyhow::Result<HttpResponse> {
+    let _ = OffsetDateTime::parse(rfc3339_time, &Rfc3339)?;
+
+    let oracle = match oracles.get(&filters.asset_pair) {
+        None => {
+            return Ok(make_api_response::<String>(
+                None,
+                Some(format!("asset pair {} not recorded", filters.asset_pair)),
+            ))
         }
-
-        let start = filters.page * PAGE_SIZE;
-
-        match filters.sort_by {
-            SortOrder::Insertion => loop {
-                let init_key = oracle.event_database.first()?.unwrap().0;
-                let start_key =
-                    OffsetDateTime::parse(&String::from_utf8_lossy(&init_key), &Rfc3339).unwrap()
-                        + Duration::days(start.into());
-                let end_key = start_key + Duration::days(PAGE_SIZE.into());
-                let start_key = start_key.format(&Rfc3339).unwrap().into_bytes();
-                let end_key = end_key.format(&Rfc3339).unwrap().into_bytes();
-                if init_key == oracle.event_database.first()?.unwrap().0 {
-                    // don't know if range can change while iterating due to another thread modifying
-                    info!(
-                        "retrieving oracle events from {} to {}",
-                        String::from_utf8_lossy(&start_key),
-                        String::from_utf8_lossy(&end_key),
-                    );
-                    return Ok(make_api_response(
-                        Some(
-                            oracle
-                                .event_database
-                                .range(start_key..end_key)
-                                .map(|result| {
-                                    parse_database_entry(filters.asset_pair, result.unwrap())
-                                })
-                                .collect::<Vec<_>>(),
-                        ),
-                        None,
-                    ));
-                }
-            },
-            SortOrder::ReverseInsertion => loop {
-                let init_key = oracle.event_database.last()?.unwrap().0;
-                let end_key = OffsetDateTime::parse(&String::from_utf8_lossy(&init_key), &Rfc3339)
-                    .unwrap()
-                    - Duration::days(start.into());
-                let start_key = end_key - Duration::days(PAGE_SIZE.into());
-                let start_key = start_key.format(&Rfc3339).unwrap().into_bytes();
-                let end_key = end_key.format(&Rfc3339).unwrap().into_bytes();
-                if init_key == oracle.event_database.last()?.unwrap().0 {
-                    // don't know if range can change while iterating due to another thread modifying
-                    info!(
-                        "retrieving oracle events from {} to {}",
-                        String::from_utf8_lossy(&start_key),
-                        String::from_utf8_lossy(&end_key),
-                    );
-                    return Ok(make_api_response(
-                        Some(
-                            oracle
-                                .event_database
-                                .range(start_key..end_key)
-                                .map(|result| {
-                                    parse_database_entry(filters.asset_pair, result.unwrap())
-                                })
-                                .collect::<Vec<_>>(),
-                        ),
-                        None,
-                    ));
-                }
-            },
-        }
+        Some(val) => val,
     };
 
-    match execute_announcements() {
+    if oracle.event_database.is_empty() {
+        info!("no oracle events found");
+        return Err(anyhow!(
+            "oracle event with maturation {} not found",
+            rfc3339_time
+        ));
+    }
+
+    info!("retrieving oracle event with maturation {}", rfc3339_time);
+    let event = match oracle.event_database.get(rfc3339_time.as_bytes())? {
+        Some(val) => val,
+        None => {
+            return Err(anyhow!(
+                "oracle event with maturation {} not found",
+                rfc3339_time
+            ))
+        }
+    };
+    Ok(make_api_response(
+        Some(parse_database_entry(
+            filters.asset_pair,
+            (rfc3339_time.into(), event),
+        )),
+        None,
+    ))
+}
+
+#[get("/announcement/{rfc3339_time}")]
+async fn announcement(
+    oracles: web::Data<HashMap<AssetPair, Oracle>>,
+    filters: web::Query<Filters>,
+    path: web::Path<String>,
+) -> HttpResponse {
+    info!("GET /announcement/{}: {:#?}", path, filters);
+    match execute_announcement(&oracles, &filters, &path) {
         Ok(val) => val,
         Err(err) => make_api_response::<String>(None, Some(err.to_string())),
     }
@@ -280,7 +337,11 @@ async fn main() -> anyhow::Result<()> {
     HttpServer::new(move || {
         App::new()
             .app_data(web::Data::new(oracles.clone()))
-            .service(web::scope("/v1").service(announcements))
+            .service(
+                web::scope("/v1")
+                    .service(announcements)
+                    .service(announcement),
+            )
     })
     .bind(("127.0.0.1", 8080))?
     .run()
