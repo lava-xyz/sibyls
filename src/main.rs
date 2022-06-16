@@ -2,7 +2,6 @@
 extern crate log;
 
 use actix_web::{get, http::header::ContentType, web, App, HttpResponse, HttpServer};
-use anyhow::anyhow;
 use clap::Parser;
 use hex::ToHex;
 use secp256k1_zkp::{rand, KeyPair, Secp256k1, SecretKey};
@@ -25,6 +24,9 @@ use sybils::{
     },
     AssetPair, AssetPairInfo, OracleConfig,
 };
+
+mod error;
+use error::{Result, SybilsError};
 
 const PAGE_SIZE: u32 = 100;
 
@@ -90,7 +92,7 @@ fn parse_database_entry(
 fn execute_announcements(
     oracles: &HashMap<AssetPair, Oracle>,
     filters: &Filters,
-) -> anyhow::Result<HttpResponse> {
+) -> Result<HttpResponse> {
     let oracle = match oracles.get(&filters.asset_pair) {
         None => {
             return Ok(make_api_response::<String>(
@@ -182,7 +184,7 @@ fn execute_announcement(
     oracles: &HashMap<AssetPair, Oracle>,
     filters: &Filters,
     rfc3339_time: &str,
-) -> anyhow::Result<HttpResponse> {
+) -> Result<HttpResponse> {
     let _ = OffsetDateTime::parse(rfc3339_time, &Rfc3339)?;
 
     let oracle = match oracles.get(&filters.asset_pair) {
@@ -197,9 +199,8 @@ fn execute_announcement(
 
     if oracle.event_database.is_empty() {
         info!("no oracle events found");
-        return Err(anyhow!(
-            "oracle event with maturation {} not found",
-            rfc3339_time
+        return Err(SybilsError::OracleEventNotFoundError(
+            rfc3339_time.to_string(),
         ));
     }
 
@@ -207,9 +208,8 @@ fn execute_announcement(
     let event = match oracle.event_database.get(rfc3339_time.as_bytes())? {
         Some(val) => val,
         None => {
-            return Err(anyhow!(
-                "oracle event with maturation {} not found",
-                rfc3339_time
+            return Err(SybilsError::OracleEventNotFoundError(
+                rfc3339_time.to_string(),
             ))
         }
     };
@@ -359,7 +359,7 @@ async fn main() -> anyhow::Result<()> {
             Ok(oracle)
         }))
         .map(|(asset_pair, oracle)| oracle.map(|ok| (asset_pair, ok)))
-        .collect::<anyhow::Result<HashMap<_, _>>>()?;
+        .collect::<Result<HashMap<_, _>>>()?;
 
     // setup and run server
     info!("starting server");
