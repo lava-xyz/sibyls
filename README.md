@@ -97,6 +97,27 @@ Example:
 curl -X GET http://localhost:8080/v1/announcement/2022-05-31T08:00:00Z?asset_pair=ETHUSD
 ```
 
+### Get configuration
+
+```sh
+curl -X GET http://localhost:8080/v1/config
+```
+
+This endpoint returns the [oracle config](#configure).
+
+Output example:
+
+```json
+{
+    "error": null,
+    "result": {
+        "announcement_offset": "7days 8h",
+        "attestation_time": "08:00",
+        "frequency": "1day"
+    }
+}
+```
+
 ## Run
 
 To run, first clone the repository and build:

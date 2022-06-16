@@ -62,7 +62,7 @@ struct ApiOracleEvent {
     outcome: Option<u64>,
 }
 
-fn make_api_response<T: Serialize>(result: Option<T>, error: Option<String>) -> HttpResponse {
+fn make_api_response<T: Serialize>(result: Option<&T>, error: Option<&str>) -> HttpResponse {
     HttpResponse::Ok().content_type(ContentType::json()).body(
         json!({
             "result": result,
@@ -95,7 +95,7 @@ fn execute_announcements(
         None => {
             return Ok(make_api_response::<String>(
                 None,
-                Some(format!("asset pair {} not recorded", filters.asset_pair)),
+                Some(&format!("asset pair {} not recorded", filters.asset_pair)),
             ))
         }
         Some(val) => val,
@@ -103,7 +103,7 @@ fn execute_announcements(
 
     if oracle.event_database.is_empty() {
         info!("no oracle events found");
-        return Ok(make_api_response(Some(Vec::<ApiOracleEvent>::new()), None));
+        return Ok(make_api_response(Some(&Vec::<ApiOracleEvent>::new()), None));
     }
 
     let start = filters.page * PAGE_SIZE;
@@ -126,7 +126,7 @@ fn execute_announcements(
                 );
                 return Ok(make_api_response(
                     Some(
-                        oracle
+                        &oracle
                             .event_database
                             .range(start_key..end_key)
                             .map(|result| parse_database_entry(filters.asset_pair, result.unwrap()))
@@ -153,7 +153,7 @@ fn execute_announcements(
                 );
                 return Ok(make_api_response(
                     Some(
-                        oracle
+                        &oracle
                             .event_database
                             .range(start_key..end_key)
                             .map(|result| parse_database_entry(filters.asset_pair, result.unwrap()))
@@ -174,7 +174,7 @@ async fn announcements(
     info!("GET /announcements: {:#?}", filters);
     match execute_announcements(&oracles, &filters) {
         Ok(val) => val,
-        Err(err) => make_api_response::<String>(None, Some(err.to_string())),
+        Err(err) => make_api_response::<String>(None, Some(&err.to_string())),
     }
 }
 
@@ -189,7 +189,7 @@ fn execute_announcement(
         None => {
             return Ok(make_api_response::<String>(
                 None,
-                Some(format!("asset pair {} not recorded", filters.asset_pair)),
+                Some(&format!("asset pair {} not recorded", filters.asset_pair)),
             ))
         }
         Some(val) => val,
@@ -214,7 +214,7 @@ fn execute_announcement(
         }
     };
     Ok(make_api_response(
-        Some(parse_database_entry(
+        Some(&parse_database_entry(
             filters.asset_pair,
             (rfc3339_time.into(), event),
         )),
@@ -231,8 +231,23 @@ async fn announcement(
     info!("GET /announcement/{}: {:#?}", path, filters);
     match execute_announcement(&oracles, &filters, &path) {
         Ok(val) => val,
-        Err(err) => make_api_response::<String>(None, Some(err.to_string())),
+        Err(err) => make_api_response::<String>(None, Some(&err.to_string())),
     }
+}
+
+#[get("/config")]
+async fn config(oracles: web::Data<HashMap<AssetPair, Oracle>>) -> HttpResponse {
+    info!("GET /config");
+    make_api_response(
+        Some(
+            &oracles
+                .values()
+                .next()
+                .expect("no asset pairs recorded")
+                .oracle_config,
+        ),
+        None,
+    )
 }
 
 #[derive(Parser)]
@@ -354,7 +369,8 @@ async fn main() -> anyhow::Result<()> {
             .service(
                 web::scope("/v1")
                     .service(announcements)
-                    .service(announcement),
+                    .service(announcement)
+                    .service(config),
             )
     })
     .bind(("127.0.0.1", 8080))?

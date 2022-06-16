@@ -19,7 +19,7 @@ pub struct DbValue(
 
 #[derive(Clone)]
 pub struct Oracle {
-    oracle_config: OracleConfig,
+    pub oracle_config: OracleConfig,
     asset_pair_info: AssetPairInfo,
     pub event_database: Db,
     keypair: KeyPair,
