@@ -10,13 +10,14 @@ actix-web = "4.0.1"
 anyhow = "1.0.57"
 async-trait = "0.1.53"
 chrono = "0.4"
-clap = { version = "3.1.18", features = ["derive"] }
+clap = { version = "3.2.5", features = ["derive"] }
 clokwerk = "0.4.0-rc1"
 displaydoc = "0.2"
 dlc-messages = "0.2.0"
 env_logger = "0.9.0"
 futures = "0.3.21"
 hex = "0.4"
+humantime = "2.1.0"
 lightning = "0.0.106"
 log = "0.4.17"
 parking_lot = "0.12.0"
@@ -29,7 +30,7 @@ serde = { version = "1.0.137", features = ["derive"] }
 serde_json = "1.0.81"
 sled = "0.34"
 thiserror = "1.0.31"
-time = { version = "0.3.9", features = ["formatting"] }
+time = { version = "0.3.9", features = ["formatting", "serde-human-readable"] }
 tokio = { version = "1.18.2", features = ["full"] }
 
 [dev-dependencies]

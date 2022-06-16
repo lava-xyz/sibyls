@@ -4,7 +4,7 @@ use super::{
 };
 use crate::AssetPairInfo;
 use chrono::Utc;
-use clokwerk::{AsyncScheduler, Job, TimeUnits};
+use clokwerk::{AsyncScheduler, Interval, Job};
 use core::ptr;
 use futures::{stream, StreamExt};
 use log::info;
@@ -22,10 +22,7 @@ use secp256k1_zkp::{
 };
 use serde_json;
 use std::sync::Arc;
-use time::{
-    format_description::well_known::Rfc3339, macros::format_description, Duration, OffsetDateTime,
-    Time,
-};
+use time::{format_description::well_known::Rfc3339, macros::format_description, OffsetDateTime};
 use tokio::{
     sync::{mpsc, Mutex},
     time::sleep,
@@ -86,7 +83,6 @@ struct OracleScheduler {
     oracle: Oracle,
     secp: Secp256k1<All>,
     pricefeeds: Vec<Box<dyn PriceFeed + Send + Sync>>,
-    announcement_offset: Duration,
     db_values: Queue<DbValue>,
     next_announcement: OffsetDateTime,
     next_attestation: OffsetDateTime,
@@ -94,13 +90,14 @@ struct OracleScheduler {
 
 impl OracleScheduler {
     fn create_scheduler_event(&mut self) -> Result<()> {
+        let announcement_offset = self.oracle.oracle_config.announcement_offset;
         create_event(
             &mut self.oracle,
             &self.secp,
             &mut self.db_values,
-            self.next_announcement + self.announcement_offset,
+            self.next_announcement + announcement_offset,
         )?;
-        self.next_announcement += Duration::DAY;
+        self.next_announcement += self.oracle.oracle_config.frequency;
         Ok(())
     }
 
@@ -158,7 +155,7 @@ impl OracleScheduler {
             self.next_attestation.format(&Rfc3339).unwrap().into_bytes(),
             serde_json::to_string(&db_value)?.into_bytes(),
         )?;
-        self.next_attestation += Duration::DAY;
+        self.next_attestation += self.oracle.oracle_config.frequency;
         Ok(())
     }
 }
@@ -167,27 +164,12 @@ pub fn init(
     oracle: Oracle,
     secp: Secp256k1<All>,
     pricefeeds: Vec<Box<dyn PriceFeed + Send + Sync>>,
-    attestation_time: Time,
-    announcement_offset: Duration,
 ) -> Result<()> {
-    if !announcement_offset.is_positive() {
-        return Err(OracleSchedulerError::InvalidAnnouncementTimeError(
-            announcement_offset,
-        ));
-    }
-
     // start event creation task
     info!("creating oracle events and schedules");
     tokio::spawn(async move {
         let (tx, mut rx) = mpsc::unbounded_channel();
-        if let Err(err) = create_events(
-            oracle,
-            secp,
-            pricefeeds,
-            attestation_time,
-            announcement_offset,
-            tx,
-        ) {
+        if let Err(err) = create_events(oracle, secp, pricefeeds, tx) {
             panic!("oracle scheduler create_events error: {}", err);
         }
         while let Some(err) = rx.recv().await {
@@ -203,21 +185,19 @@ fn create_events(
     mut oracle: Oracle,
     secp: Secp256k1<All>,
     pricefeeds: Vec<Box<dyn PriceFeed + Send + Sync>>,
-    attestation_time: Time,
-    announcement_offset: Duration,
     error_transmitter: mpsc::UnboundedSender<OracleSchedulerError>,
 ) -> Result<()> {
     let now = OffsetDateTime::now_utc();
-    let mut next_attestation = now.replace_time(attestation_time);
+    let mut next_attestation = now.replace_time(oracle.oracle_config.attestation_time);
     if next_attestation <= now {
-        next_attestation += Duration::DAY;
+        next_attestation += oracle.oracle_config.frequency;
     }
-    let mut next_announcement = next_attestation - announcement_offset;
+    let mut next_announcement = next_attestation - oracle.oracle_config.announcement_offset;
     let mut db_values = queue![];
     // create all events that should have already been made
     info!("creating events that should have already been made");
     while next_announcement <= now {
-        let next_attestation = next_announcement + announcement_offset;
+        let next_attestation = next_announcement + oracle.oracle_config.announcement_offset;
         match oracle
             .event_database
             .get(next_attestation.format(&Rfc3339).unwrap())?
@@ -233,21 +213,21 @@ fn create_events(
                     .unwrap();
             }
         };
-        next_announcement += Duration::DAY;
+        next_announcement += oracle.oracle_config.frequency;
     }
     let oracle_scheduler = Arc::new(Mutex::new(OracleScheduler {
-        oracle,
+        oracle: oracle.clone(),
         secp,
         pricefeeds,
-        announcement_offset,
         db_values,
         next_announcement,
         next_attestation,
     }));
     info!(
-        "created new oracle scheduler with\n\tannouncements at {}\n\tattestations at {}\n\tnext announcement at {}\n\tnext attestation at {}",
-        attestation_time - announcement_offset,
-        attestation_time,
+        "created new oracle scheduler with\n\tannouncements at {}\n\tattestations at {}\n\tfrequency of {}\n\tnext announcement at {}\n\tnext attestation at {}",
+        oracle.oracle_config.attestation_time - oracle.oracle_config.announcement_offset,
+        oracle.oracle_config.attestation_time,
+        oracle.oracle_config.frequency,
         next_announcement,
         next_attestation
     );
@@ -256,12 +236,22 @@ fn create_events(
     // schedule announcements
     let error_transmitter_clone = error_transmitter.clone();
     let oracle_scheduler_clone = oracle_scheduler.clone();
+    let interval = Interval::Seconds(
+        oracle
+            .oracle_config
+            .frequency
+            .whole_seconds()
+            .try_into()
+            .unwrap(),
+    );
     info!("starting announcement scheduler");
     scheduler
-        .every(1.day())
-        .at(&(attestation_time - announcement_offset)
-            .format(&format_description!("[hour]:[minute]:[second]"))
-            .unwrap())
+        .every(interval)
+        .at(
+            &(oracle.oracle_config.attestation_time - oracle.oracle_config.announcement_offset)
+                .format(&format_description!("[hour]:[minute]:[second]"))
+                .unwrap(),
+        )
         .run(move || {
             let oracle_scheduler_clone = oracle_scheduler_clone.clone();
             let error_transmitter_clone = error_transmitter_clone.clone();
@@ -275,8 +265,10 @@ fn create_events(
     // schedule attestations
     info!("starting attestation scheduler");
     scheduler
-        .every(1.day())
-        .at(&attestation_time
+        .every(interval)
+        .at(&oracle
+            .oracle_config
+            .attestation_time
             .format(&format_description!("[hour]:[minute]:[second]"))
             .unwrap())
         .run(move || {

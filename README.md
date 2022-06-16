@@ -120,13 +120,21 @@ To specify a file to read the secret key from, execute:
 
 One is generated if not provided.
 
-To specify a file to read asset pair configs (more on this in [Asset Pairs](#asset-pairs)) from, execute:
+To specify a file to read asset pair configs from (more on this in [Asset Pairs](#asset-pairs)), execute:
 
 ```sh
 ./target/release/sybils -a <FILE>
 ```
 
 One is expected at `config/asset_pair.json` if not provided.
+
+To specify a file to read oracle configs from (more on this in [Configure](#configure)), execute:
+
+```sh
+./target/release/sybils -o <FILE>
+```
+
+One is expected at `config/oracle.json` if not provided.
 
 For help, execute:
 
@@ -141,6 +149,20 @@ RUST_LOG=INFO ./target/release/sybils
 ```
 
 Currently, the only logging done is at the `INFO` and `DEBUG` levels.
+
+### Configure
+
+Asset pair configs will be discussed in [Asset Pairs](#asset-pairs).
+
+There are three configurable parameters for the oracle:
+
+| name                  | type                                                                                                                                                                         | description                                                                                                           |
+|-----------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------|
+| `attestation_time`    | `([0-1][0-9]\|2[0-3]):[0-5][0-9]`                                                                                                                                            | time of attestation, in 24-hour format                                                                                |
+| `frequency`           | `(\d+(nsec\|ns\|usec\|us\|msec\|ms\|seconds\|second\|sec\|s\|minutes\|minute\|min\|m\|hours\|hour\|hr\|h\|days\|day\|d\|weeks\|week\|w\|months\|month\|M\|years\|year\|y))+` | frequency of attestation                                                                                              |
+| `announcement_offset` | `(\d+(nsec\|ns\|usec\|us\|msec\|ms\|seconds\|second\|sec\|s\|minutes\|minute\|min\|m\|hours\|hour\|hr\|h\|days\|day\|d\|weeks\|week\|w\|months\|month\|M\|years\|year\|y))+` | offset from attestation for announcement, e.g. with an offset of `5h` announcements happen at `attestation_time - 5h` |
+
+The program defaults are located in `config/oracle.json`.
 
 ## Extend
 
@@ -186,7 +208,7 @@ Asset pairs may also be added, although it is a bit more involved. To add a new 
 | `asset_pair`       | `AssetPair` enum                                                                                                          | asset pair       |
 | `event_descriptor` | [`event_descriptor`](https://github.com/discreetlogcontracts/dlcspecs/blob/master/Oracle.md#event-descriptor) | event descriptor |
 
-for now, the only `event_descriptor` supported is `digit_decomposition_event_descriptor` because that is the most immediate use case (for bitcoin). However, `enum_event_descriptor` will be added in the future. Furthermore, note that because of a quirk in the encodings of attestations due to inconsistencies between encoding libraries and [DLC spec](https://github.com/discreetlogcontracts/dlcspecs/blob/master/Messaging.md), currently `event_descriptor.base` must be 2 (binary) or else decoding will be incorrect. This will be changed in the future.
+For now, the only `event_descriptor` supported is `digit_decomposition_event_descriptor` because that is the most immediate use case (for bitcoin). However, `enum_event_descriptor` will be added in the future. Furthermore, note that because of a quirk in the encodings of attestations due to inconsistencies between encoding libraries and [DLC spec](https://github.com/discreetlogcontracts/dlcspecs/blob/master/Messaging.md), currently `event_descriptor.base` must be 2 (binary) or else decoding will be incorrect. This will be changed in the future.
 
 An example of a valid addition in `config/asset_pair.json` is the following:
 

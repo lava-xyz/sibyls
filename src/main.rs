@@ -4,6 +4,7 @@ extern crate log;
 use actix_web::{get, http::header::ContentType, web, App, HttpResponse, HttpServer};
 use anyhow::anyhow;
 use clap::Parser;
+use hex::ToHex;
 use secp256k1_zkp::{rand, KeyPair, Secp256k1, SecretKey};
 use serde::{Deserialize, Serialize};
 use serde_json::{self, json};
@@ -14,16 +15,15 @@ use std::{
     io::Read,
     str::FromStr,
 };
-use time::{format_description::well_known::Rfc3339, macros::time, Duration, OffsetDateTime, Time};
+use time::{format_description::well_known::Rfc3339, Duration, OffsetDateTime};
 
-use hex::ToHex;
 use sybils::{
     oracle::{
         oracle_scheduler,
         pricefeeds::{Bitstamp, GateIo, Kraken, PriceFeed},
         DbValue, Oracle,
     },
-    AssetPair, AssetPairInfo,
+    AssetPair, AssetPairInfo, OracleConfig,
 };
 
 const PAGE_SIZE: u32 = 100;
@@ -239,17 +239,17 @@ async fn announcement(
 /// Simple DLC oracle implementation
 struct Args {
     /// Optional private key file; if not provided, one is generated
-    #[clap(short, long = "secret-key-file", parse(from_os_str), value_name = "FILE", value_hint = clap::ValueHint::FilePath)]
+    #[clap(short, long, parse(from_os_str), value_name = "FILE", value_hint = clap::ValueHint::FilePath)]
     secret_key_file: Option<std::path::PathBuf>,
 
     /// Optional asset pair config file; if not provided, it is assumed to exist at "config/asset_pair.json"
-    #[clap(short, long = "asset-pair-config-file", parse(from_os_str), value_name = "FILE", value_hint = clap::ValueHint::FilePath)]
+    #[clap(short, long, parse(from_os_str), value_name = "FILE", value_hint = clap::ValueHint::FilePath)]
     asset_pair_config_file: Option<std::path::PathBuf>,
-}
 
-const ATTESTATION_TIME: Time = time!(8:00);
-// 7 days in advance, at 12:00 am
-const ANNOUNCEMENT_OFFSET: Duration = Duration::hours(176);
+    /// Optional oracle config file; if not provided, it is assumed to exist at "config/oracle.json"
+    #[clap(short, long, parse(from_os_str), value_name = "FILE", value_hint = clap::ValueHint::FilePath)]
+    oracle_config_file: Option<std::path::PathBuf>,
+}
 
 #[actix_web::main]
 async fn main() -> anyhow::Result<()> {
@@ -296,7 +296,27 @@ async fn main() -> anyhow::Result<()> {
             serde_json::from_str(&asset_pair_info)?
         }
     };
-    info!("asset pair config successfully read");
+    info!(
+        "asset pair config successfully read: {:#?}",
+        asset_pair_infos
+    );
+
+    let oracle_config: OracleConfig = match args.oracle_config_file {
+        None => {
+            info!("reading oracle config from config/oracle.json");
+            serde_json::from_str(&fs::read_to_string("config/oracle.json")?)?
+        }
+        Some(path) => {
+            info!(
+                "reading oracle config from {}",
+                path.as_os_str().to_string_lossy()
+            );
+            let mut oracle_config = String::new();
+            File::open(path)?.read_to_string(&mut oracle_config)?;
+            serde_json::from_str(&oracle_config)?
+        }
+    };
+    info!("oracle config successfully read: {:#?}", oracle_config);
 
     // setup event databases
     let oracles = asset_pair_infos
@@ -307,7 +327,7 @@ async fn main() -> anyhow::Result<()> {
 
             // create oracle
             info!("creating oracle for {}", asset_pair);
-            let oracle = Oracle::new(asset_pair_info, keypair)?;
+            let oracle = Oracle::new(oracle_config.clone(), asset_pair_info, keypair)?;
 
             // pricefeed retreival
             info!("creating pricefeeds for {}", asset_pair);
@@ -319,13 +339,7 @@ async fn main() -> anyhow::Result<()> {
 
             info!("scheduling oracle events for {}", asset_pair);
             // schedule oracle events (announcements/attestations)
-            oracle_scheduler::init(
-                oracle.clone(),
-                secp.clone(),
-                pricefeeds,
-                ATTESTATION_TIME,
-                ANNOUNCEMENT_OFFSET,
-            )?;
+            oracle_scheduler::init(oracle.clone(), secp.clone(), pricefeeds)?;
 
             Ok(oracle)
         }))

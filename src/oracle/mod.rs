@@ -1,4 +1,4 @@
-use crate::AssetPairInfo;
+use crate::{AssetPairInfo, OracleConfig};
 use log::info;
 use secp256k1_zkp::KeyPair;
 use serde::{Deserialize, Serialize};
@@ -19,19 +19,31 @@ pub struct DbValue(
 
 #[derive(Clone)]
 pub struct Oracle {
+    oracle_config: OracleConfig,
     asset_pair_info: AssetPairInfo,
     pub event_database: Db,
     keypair: KeyPair,
 }
 
 impl Oracle {
-    pub fn new(asset_pair_info: AssetPairInfo, keypair: KeyPair) -> Result<Oracle> {
+    pub fn new(
+        oracle_config: OracleConfig,
+        asset_pair_info: AssetPairInfo,
+        keypair: KeyPair,
+    ) -> Result<Oracle> {
+        if !oracle_config.announcement_offset.is_positive() {
+            return Err(OracleError::InvalidAnnouncementTimeError(
+                oracle_config.announcement_offset,
+            ));
+        }
+
         // setup event database
         let path = format!("events/{}", asset_pair_info.asset_pair);
         info!("creating sled at {}", path);
         let event_database = sled::open(path)?;
 
         Ok(Oracle {
+            oracle_config,
             asset_pair_info,
             event_database,
             keypair,
