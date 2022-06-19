@@ -25,7 +25,7 @@ use sybils::{
 };
 
 mod error;
-use error::{SybilsError, SybilsValidationError};
+use error::SybilsError;
 
 const PAGE_SIZE: u32 = 100;
 
@@ -179,8 +179,7 @@ async fn announcement(
     path: web::Path<String>,
 ) -> actix_web::Result<HttpResponse, actix_web::Error> {
     info!("GET /announcement/{}: {:#?}", path, filters);
-    let _ = OffsetDateTime::parse(&path, &Rfc3339)
-        .map_err(SybilsValidationError::DatetimeParseError)?;
+    let _ = OffsetDateTime::parse(&path, &Rfc3339).map_err(SybilsError::DatetimeParseError)?;
 
     let oracle = match oracles.get(&filters.asset_pair) {
         None => return Err(SybilsError::UnrecordedAssetPairError(filters.asset_pair).into()),
