@@ -1,4 +1,4 @@
-# sybils
+# sibyls
 a numeric (and extensible) oracle implementation for bitcoin
 
 ![alt text](https://upload.wikimedia.org/wikipedia/commons/thumb/5/55/Sibyl_Domenichino.jpg/440px-Sibyl_Domenichino.jpg)
@@ -114,20 +114,20 @@ Output example:
 To run, first clone the repository and build:
 
 ```sh
-git clone https://github.com/lava-xyz/sybils.git
+git clone https://github.com/lava-xyz/sibyls.git
 cargo build --release
 ```
 
 Then, you can run by executing:
 
 ```sh
-./target/release/sybils
+./target/release/sibyls
 ```
 
 To specify a file to read the secret key from, execute:
 
 ```sh
-./target/release/sybils -s <FILE>
+./target/release/sibyls -s <FILE>
 ```
 
 One is generated if not provided.
@@ -135,7 +135,7 @@ One is generated if not provided.
 To specify a file to read asset pair configs from (more on this in [Asset Pairs](#asset-pairs)), execute:
 
 ```sh
-./target/release/sybils -a <FILE>
+./target/release/sibyls -a <FILE>
 ```
 
 One is expected at `config/asset_pair.json` if not provided.
@@ -143,7 +143,7 @@ One is expected at `config/asset_pair.json` if not provided.
 To specify a file to read oracle configs from (more on this in [Configure](#configure)), execute:
 
 ```sh
-./target/release/sybils -o <FILE>
+./target/release/sibyls -o <FILE>
 ```
 
 One is expected at `config/oracle.json` if not provided.
@@ -151,13 +151,13 @@ One is expected at `config/oracle.json` if not provided.
 For help, execute:
 
 ```sh
-./target/release/sybils -h
+./target/release/sibyls -h
 ```
 
 For optional logging, you can run the above commands with the `RUST_LOG` environment variable set (see [`env_logger`](https://docs.rs/env_logger/0.9.0/env_logger/) for more), for example:
 
 ```sh
-RUST_LOG=INFO ./target/release/sybils
+RUST_LOG=INFO ./target/release/sibyls
 ```
 
 Currently, the only logging done is at the `INFO` and `DEBUG` levels.

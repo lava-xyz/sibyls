@@ -15,7 +15,7 @@ use std::{
 };
 use time::{format_description::well_known::Rfc3339, Duration, OffsetDateTime};
 
-use sybils::{
+use sibyls::{
     oracle::{
         oracle_scheduler,
         pricefeeds::{Bitstamp, GateIo, Kraken, PriceFeed},
@@ -25,7 +25,7 @@ use sybils::{
 };
 
 mod error;
-use error::SybilsError;
+use error::SibylsError;
 
 const PAGE_SIZE: u32 = 100;
 
@@ -85,7 +85,7 @@ async fn announcements(
 ) -> actix_web::Result<HttpResponse, actix_web::Error> {
     info!("GET /announcements: {:#?}", filters);
     let oracle = match oracles.get(&filters.asset_pair) {
-        None => return Err(SybilsError::UnrecordedAssetPairError(filters.asset_pair).into()),
+        None => return Err(SibylsError::UnrecordedAssetPairError(filters.asset_pair).into()),
         Some(val) => val,
     };
 
@@ -101,7 +101,7 @@ async fn announcements(
             let init_key = oracle
                 .event_database
                 .first()
-                .map_err(SybilsError::DatabaseError)?
+                .map_err(SibylsError::DatabaseError)?
                 .unwrap()
                 .0;
             let start_key = OffsetDateTime::parse(&String::from_utf8_lossy(&init_key), &Rfc3339)
@@ -114,7 +114,7 @@ async fn announcements(
                 == oracle
                     .event_database
                     .first()
-                    .map_err(SybilsError::DatabaseError)?
+                    .map_err(SibylsError::DatabaseError)?
                     .unwrap()
                     .0
             {
@@ -137,7 +137,7 @@ async fn announcements(
             let init_key = oracle
                 .event_database
                 .last()
-                .map_err(SybilsError::DatabaseError)?
+                .map_err(SibylsError::DatabaseError)?
                 .unwrap()
                 .0;
             let end_key = OffsetDateTime::parse(&String::from_utf8_lossy(&init_key), &Rfc3339)
@@ -150,7 +150,7 @@ async fn announcements(
                 == oracle
                     .event_database
                     .last()
-                    .map_err(SybilsError::DatabaseError)?
+                    .map_err(SibylsError::DatabaseError)?
                     .unwrap()
                     .0
             {
@@ -179,26 +179,26 @@ async fn announcement(
     path: web::Path<String>,
 ) -> actix_web::Result<HttpResponse, actix_web::Error> {
     info!("GET /announcement/{}: {:#?}", path, filters);
-    let _ = OffsetDateTime::parse(&path, &Rfc3339).map_err(SybilsError::DatetimeParseError)?;
+    let _ = OffsetDateTime::parse(&path, &Rfc3339).map_err(SibylsError::DatetimeParseError)?;
 
     let oracle = match oracles.get(&filters.asset_pair) {
-        None => return Err(SybilsError::UnrecordedAssetPairError(filters.asset_pair).into()),
+        None => return Err(SibylsError::UnrecordedAssetPairError(filters.asset_pair).into()),
         Some(val) => val,
     };
 
     if oracle.event_database.is_empty() {
         info!("no oracle events found");
-        return Err(SybilsError::OracleEventNotFoundError(path.to_string()).into());
+        return Err(SibylsError::OracleEventNotFoundError(path.to_string()).into());
     }
 
     info!("retrieving oracle event with maturation {}", path);
     let event = match oracle
         .event_database
         .get(path.as_bytes())
-        .map_err(SybilsError::DatabaseError)?
+        .map_err(SibylsError::DatabaseError)?
     {
         Some(val) => val,
-        None => return Err(SybilsError::OracleEventNotFoundError(path.to_string()).into()),
+        None => return Err(SibylsError::OracleEventNotFoundError(path.to_string()).into()),
     };
     Ok(HttpResponse::Ok().json(parse_database_entry(
         filters.asset_pair,

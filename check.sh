@@ -1,6 +1,6 @@
 #!/bin/bash
 
-ps cax | grep sybils > /dev/null
+ps cax | grep sibyls > /dev/null
 if [ $? -ne 0 ]; then
-    nohup /home/ubuntu/sybils/target/release/sybils -s /home/ubuntu/sybils/secret.txt &
+    nohup /home/ubuntu/sibyls/target/release/sibyls -s /home/ubuntu/sibyls/secret.txt &
 fi
