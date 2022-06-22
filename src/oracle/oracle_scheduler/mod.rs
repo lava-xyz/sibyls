@@ -319,7 +319,7 @@ fn create_event(
     Ok(())
 }
 
-fn build_announcement(
+pub fn build_announcement(
     asset_pair_info: &AssetPairInfo,
     keypair: &KeyPair,
     secp: &Secp256k1<All>,
@@ -357,7 +357,7 @@ fn build_announcement(
     ))
 }
 
-fn build_attestation(
+pub fn build_attestation(
     outstanding_sk_nonces: Vec<[u8; 32]>,
     keypair: &KeyPair,
     secp: &Secp256k1<All>,
