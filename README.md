@@ -1,5 +1,5 @@
 # sibyls
-a numeric (and extensible) oracle implementation for bitcoin
+a numeric (and extensible) oracle implementation for bitcoin. 
 
 ![alt text](https://upload.wikimedia.org/wikipedia/commons/thumb/5/55/Sibyl_Domenichino.jpg/440px-Sibyl_Domenichino.jpg)
 
@@ -266,3 +266,5 @@ impl PriceFeed for Kraken {
     //snip
 }
 ```
+
+Feel free to email oracle (at) lava (dot) xyz if you need help setting this up.
