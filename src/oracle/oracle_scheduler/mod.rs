@@ -9,7 +9,7 @@ use core::ptr;
 use futures::{stream, StreamExt};
 use log::info;
 use queues::{queue, IsQueue, Queue};
-use secp256k1_sys::{
+use secp256k1_zkp::secp256k1_zkp_sys::{
     types::{c_int, c_uchar, c_void, size_t},
     CPtr, SchnorrSigExtraParams,
 };
@@ -33,7 +33,7 @@ pub use error::OracleSchedulerError;
 pub use error::Result;
 
 pub mod messaging;
-use messaging::{Announcement, Attestation, OracleAnnouncementHash, OracleEvent};
+use messaging::{Announcement, Attestation, OracleEvent};
 
 const SCHEDULER_SLEEP_TIME: std::time::Duration = std::time::Duration::from_millis(100);
 
@@ -65,7 +65,7 @@ fn sign_schnorr_with_nonce<S: Signing>(
             SchnorrSigExtraParams::new(Some(constant_nonce_fn), nonce.as_c_ptr() as *const c_void);
         assert_eq!(
             1,
-            secp256k1_sys::secp256k1_schnorrsig_sign_custom(
+            secp256k1_zkp::secp256k1_zkp_sys::secp256k1_schnorrsig_sign_custom(
                 *secp.ctx(),
                 sig.as_mut_c_ptr(),
                 msg.as_c_ptr(),
@@ -347,7 +347,9 @@ pub fn build_announcement(
     Ok((
         Announcement {
             signature: secp.sign_schnorr(
-                &Message::from_hashed_data::<OracleAnnouncementHash>(&oracle_event.encode()),
+                &Message::from_hashed_data::<secp256k1_zkp::hashes::sha256::Hash>(
+                    &oracle_event.encode(),
+                ),
                 keypair,
             ),
             oracle_pubkey: keypair.public_key(),
@@ -397,17 +399,17 @@ mod tests {
     }
 
     fn setup_v5() -> (
-        secp256k1_zkp_5::SecretKey,
-        secp256k1_zkp_5::PublicKey,
-        secp256k1_zkp_5::Secp256k1<secp256k1_zkp_5::All>,
+        secp256k1_zkp::SecretKey,
+        secp256k1_zkp::PublicKey,
+        secp256k1_zkp::Secp256k1<secp256k1_zkp::All>,
     ) {
-        let secp = secp256k1_zkp_5::Secp256k1::new();
+        let secp = secp256k1_zkp::Secp256k1::new();
         let mut rng = rand::thread_rng();
         let (secret_key, public_key) = secp.generate_keypair(&mut rng);
         (secret_key, public_key, secp)
     }
 
-    fn signatures_to_secret(signatures: &[SchnorrSignature]) -> secp256k1_zkp_5::SecretKey {
+    fn signatures_to_secret(signatures: &[SchnorrSignature]) -> secp256k1_zkp::SecretKey {
         let s_values: Vec<&[u8]> = signatures
             .iter()
             .map(|x| {
@@ -415,7 +417,7 @@ mod tests {
                 &bytes[32..64]
             })
             .collect();
-        let mut secret = secp256k1_zkp_5::SecretKey::from_slice(s_values[0]).unwrap();
+        let mut secret = secp256k1_zkp::SecretKey::from_slice(s_values[0]).unwrap();
         for s in s_values.iter().skip(1) {
             secret.add_assign(s).unwrap();
         }
@@ -519,7 +521,7 @@ mod tests {
         let adaptor_point = dlc::get_adaptor_point_from_oracle_info(
             &secp_5,
             &[OracleInfo {
-                public_key: secp256k1_zkp_5::schnorrsig::PublicKey::from_slice(
+                public_key: secp256k1_zkp::XOnlyPublicKey::from_slice(
                     &keypair.public_key().serialize(),
                 )
                 .unwrap(),
@@ -528,26 +530,25 @@ mod tests {
                     .nonces
                     .iter()
                     .map(|nonce| {
-                        secp256k1_zkp_5::schnorrsig::PublicKey::from_slice(&nonce.serialize())
-                            .unwrap()
+                        secp256k1_zkp::XOnlyPublicKey::from_slice(&nonce.serialize()).unwrap()
                     })
                     .collect(),
             }],
             &[outcomes
                 .iter()
                 .map(|outcome| {
-                    secp256k1_zkp_5::Message::from_hashed_data::<
-                        secp256k1_zkp_5::bitcoin_hashes::sha256::Hash,
-                    >(outcome.as_bytes())
+                    secp256k1_zkp::Message::from_hashed_data::<secp256k1_zkp::hashes::sha256::Hash>(
+                        outcome.as_bytes(),
+                    )
                 })
                 .collect::<Vec<_>>()],
         )
         .unwrap();
 
-        let test_msg = secp256k1_zkp_5::Message::from_hashed_data::<
-            secp256k1_zkp_5::bitcoin_hashes::sha256::Hash,
+        let test_msg = secp256k1_zkp::Message::from_hashed_data::<
+            secp256k1_zkp::hashes::sha256::Hash,
         >("test".as_bytes());
-        let adaptor_sig = secp256k1_zkp_5::EcdsaAdaptorSignature::encrypt(
+        let adaptor_sig = secp256k1_zkp::EcdsaAdaptorSignature::encrypt(
             &secp_5,
             &test_msg,
             &funding_secret_key,
@@ -563,7 +564,7 @@ mod tests {
             .unwrap();
 
         secp_5
-            .verify(&test_msg, &adapted_sig, &funding_public_key)
+            .verify_ecdsa(&test_msg, &adapted_sig, &funding_public_key)
             .unwrap();
     }
 }

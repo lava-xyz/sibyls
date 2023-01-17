@@ -1,30 +1,7 @@
 use lightning::util::ser::{Writeable, Writer};
-use secp256k1_zkp::{
-    hashes::*, schnorr::Signature as SchnorrSignature, ThirtyTwoByteHash,
-    XOnlyPublicKey as SchnorrPublicKey,
-};
+use secp256k1_zkp::{schnorr::Signature as SchnorrSignature, XOnlyPublicKey as SchnorrPublicKey};
 use serde::Deserialize;
 use time::OffsetDateTime;
-
-const ORACLE_ANNOUNCEMENT_MIDSTATE: [u8; 32] = [
-    0x0f, 0xfb, 0xaf, 0x80, 0xef, 0x9f, 0x3f, 0xe9, 0x8c, 0xe5, 0xd6, 0xa8, 0x7a, 0xad, 0xb4, 0x59,
-    0x8f, 0x85, 0xcb, 0x21, 0x3e, 0x32, 0xe3, 0x28, 0xdf, 0x98, 0xfe, 0xdb, 0x00, 0xc9, 0x7c, 0x83,
-];
-
-sha256t_hash_newtype!(
-    OracleAnnouncementHash,
-    OracleAnnouncementHashTag,
-    ORACLE_ANNOUNCEMENT_MIDSTATE,
-    64,
-    doc = "oracle announcement tagged hash",
-    true
-);
-
-impl ThirtyTwoByteHash for OracleAnnouncementHash {
-    fn into_32(self) -> [u8; 32] {
-        self.into_inner()
-    }
-}
 
 #[derive(Clone, Debug)]
 pub struct Announcement {
@@ -58,11 +35,9 @@ pub struct Attestation {
 
 impl From<&Announcement> for dlc_messages::oracle_msgs::OracleAnnouncement {
     fn from(ann: &Announcement) -> Self {
-        let announcement_signature =
-            secp256k1_zkp_5::schnorrsig::Signature::from_slice(ann.signature.as_ref()).unwrap();
+        let announcement_signature = SchnorrSignature::from_slice(ann.signature.as_ref()).unwrap();
         let oracle_public_key =
-            secp256k1_zkp_5::schnorrsig::PublicKey::from_slice(&ann.oracle_pubkey.serialize())
-                .unwrap();
+            SchnorrPublicKey::from_slice(&ann.oracle_pubkey.serialize()).unwrap();
         let oracle_event = (&ann.oracle_event).into();
         Self {
             announcement_signature,
@@ -77,9 +52,7 @@ impl From<&OracleEvent> for dlc_messages::oracle_msgs::OracleEvent {
         let oracle_nonces = event
             .nonces
             .iter()
-            .map(|nonce| {
-                secp256k1_zkp_5::schnorrsig::PublicKey::from_slice(&nonce.serialize()).unwrap()
-            })
+            .map(|nonce| SchnorrPublicKey::from_slice(&nonce.serialize()).unwrap())
             .collect::<Vec<_>>();
         let event_maturity_epoch = event.maturation.unix_timestamp().try_into().unwrap();
         let event_descriptor = (&event.event_descriptor).into();
@@ -113,12 +86,11 @@ impl From<&EventDescriptor> for dlc_messages::oracle_msgs::EventDescriptor {
 impl From<&Attestation> for dlc_messages::oracle_msgs::OracleAttestation {
     fn from(att: &Attestation) -> Self {
         let oracle_public_key =
-            secp256k1_zkp_5::schnorrsig::PublicKey::from_slice(&att.oracle_pubkey.serialize())
-                .unwrap();
+            SchnorrPublicKey::from_slice(&att.oracle_pubkey.serialize()).unwrap();
         let signatures = att
             .signatures
             .iter()
-            .map(|sig| secp256k1_zkp_5::schnorrsig::Signature::from_slice(sig.as_ref()).unwrap())
+            .map(|sig| SchnorrSignature::from_slice(sig.as_ref()).unwrap())
             .collect::<Vec<_>>();
         let outcomes = att.outcomes.to_vec();
         Self {
