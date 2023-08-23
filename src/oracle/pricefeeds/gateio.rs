@@ -20,8 +20,6 @@ impl PriceFeed for GateIo {
         let client = Client::new();
         let start_time = instant.unix_timestamp();
         info!("sending gateio http request");
-        println!("{}", self.translate_asset_pair(asset_pair));
-        println!("{}", &start_time.to_string());
         let res: Vec<Vec<Value>> = client
             .get("https://api.gateio.ws/api/v4/spot/candlesticks")
             .query(&[
