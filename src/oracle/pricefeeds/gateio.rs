@@ -20,6 +20,8 @@ impl PriceFeed for GateIo {
         let client = Client::new();
         let start_time = instant.unix_timestamp();
         info!("sending gateio http request");
+        println!("{}", self.translate_asset_pair(asset_pair));
+        println!("{}", &start_time.to_string());
         let res: Vec<Vec<Value>> = client
             .get("https://api.gateio.ws/api/v4/spot/candlesticks")
             .query(&[
@@ -38,5 +40,22 @@ impl PriceFeed for GateIo {
         }
 
         Ok(res[0][5].as_str().unwrap().parse().unwrap())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::AssetPair::BTCUSD;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn retrieve() {
+        let feed = GateIo {};
+        let price = feed.retrieve_price(BTCUSD, OffsetDateTime::now_utc()).await;
+        match price {
+            Ok(_) => assert!(true),
+            Err(_) => assert!(false, "{:#?}", &price)
+        }
     }
 }
