@@ -18,6 +18,10 @@ struct Response {
 
 #[async_trait]
 impl PriceFeed for Kraken {
+    fn id(&self) -> &'static str {
+        "kraken"
+    }
+
     fn translate_asset_pair(&self, asset_pair: AssetPair) -> &'static str {
         match asset_pair {
             AssetPair::BTCUSD => "XXBTZUSD",

@@ -18,8 +18,8 @@ use time::{format_description::well_known::Rfc3339, Duration, OffsetDateTime};
 use sibyls::{
     oracle::{
         oracle_scheduler,
-        pricefeeds::{Bitstamp, GateIo, Kraken, PriceFeed},
-        DbValue, Oracle,
+        pricefeeds::ALL_PRICE_FEEDS,
+        DbValue, Oracle, pricefeeds::create_price_feed,
     },
     AssetPair, AssetPairInfo, OracleConfig,
 };
@@ -309,18 +309,23 @@ async fn main() -> anyhow::Result<()> {
         .map(|asset_pair_info| asset_pair_info.asset_pair)
         .zip(asset_pair_infos.iter().cloned().map(|asset_pair_info| {
             let asset_pair = asset_pair_info.asset_pair;
+            let exclude_price_feeds =  asset_pair_info.exclude_price_feeds.clone();
 
             // create oracle
             info!("creating oracle for {}", asset_pair);
             let oracle = Oracle::new(oracle_config, asset_pair_info, keypair)?;
 
-            // pricefeed retreival
+            // pricefeed retrieval
             info!("creating pricefeeds for {}", asset_pair);
-            let pricefeeds: Vec<Box<dyn PriceFeed + Send + Sync>> = vec![
-                Box::new(Bitstamp {}),
-                Box::new(GateIo {}),
-                Box::new(Kraken {}),
-            ];
+            let mut pricefeeds = vec![];
+            for feed_id in ALL_PRICE_FEEDS {
+                if exclude_price_feeds.contains(&feed_id.to_string()) {
+                    info!("disable `{}` pricefeed for {}", feed_id, asset_pair);
+                } else {
+                    info!("enable `{}` pricefeed for {}", feed_id, asset_pair);
+                    pricefeeds.push(create_price_feed(feed_id).unwrap());
+                }
+            }
 
             info!("scheduling oracle events for {}", asset_pair);
             // schedule oracle events (announcements/attestations)
