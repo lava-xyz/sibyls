@@ -69,3 +69,20 @@ impl PriceFeed for Bitstamp {
         Ok(res.data.unwrap().ohlc[0].open.parse().unwrap())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::AssetPair::BTCUSD;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn retrieve() {
+        let feed = Bitstamp {};
+        let price = feed.retrieve_price(BTCUSD, OffsetDateTime::now_utc()).await;
+        match price {
+            Ok(_) => assert!(true),
+            Err(_) => assert!(false, "{:#?}", &price)
+        }
+    }
+}
