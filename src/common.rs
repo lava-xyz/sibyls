@@ -12,6 +12,7 @@ pub enum AssetPair {
 pub struct AssetPairInfo {
     pub asset_pair: AssetPair,
     pub event_descriptor: EventDescriptor,
+    pub exclude_price_feeds: Vec<String>
 }
 
 impl Display for AssetPair {

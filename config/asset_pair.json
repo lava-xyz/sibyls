@@ -7,6 +7,7 @@
             "unit": "BTCUSD",
             "precision": 0,
             "num_digits": 18
-        }
+        },
+        "exclude_price_feeds": []
     }
 ]

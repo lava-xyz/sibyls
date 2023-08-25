@@ -10,6 +10,10 @@ pub struct GateIo {}
 
 #[async_trait]
 impl PriceFeed for GateIo {
+    fn id(&self) -> &'static str {
+        "gateio"
+    }
+
     fn translate_asset_pair(&self, asset_pair: AssetPair) -> &'static str {
         match asset_pair {
             AssetPair::BTCUSD => "BTC_USD",

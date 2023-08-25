@@ -28,6 +28,10 @@ struct Ohlc {
 
 #[async_trait]
 impl PriceFeed for Bitstamp {
+    fn id(&self) -> &'static str {
+        "bitstamp"
+    }
+
     fn translate_asset_pair(&self, asset_pair: AssetPair) -> &'static str {
         match asset_pair {
             AssetPair::BTCUSD => "btcusd",
