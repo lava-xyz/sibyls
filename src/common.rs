@@ -6,13 +6,14 @@ use time::{serde::format_description, Duration, Time};
 #[derive(Copy, Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub enum AssetPair {
     BTCUSD,
+    BTCUSDT,
 }
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct AssetPairInfo {
     pub asset_pair: AssetPair,
     pub event_descriptor: EventDescriptor,
-    pub exclude_price_feeds: Vec<String>
+    pub exclude_price_feeds: Vec<String>,
 }
 
 impl Display for AssetPair {

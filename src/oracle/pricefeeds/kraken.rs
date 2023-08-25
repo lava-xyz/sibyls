@@ -28,6 +28,7 @@ impl PriceFeed for Kraken {
     fn translate_asset_pair(&self, asset_pair: AssetPair) -> &'static str {
         match asset_pair {
             AssetPair::BTCUSD => "XXBTZUSD",
+            AssetPair::BTCUSDT => "XXBTZUSDT",
         }
     }
 
@@ -66,7 +67,7 @@ impl PriceFeed for Kraken {
 
 #[cfg(test)]
 mod tests {
-    use crate::AssetPair::BTCUSD;
+    use crate::AssetPair::*;
 
     use super::*;
 

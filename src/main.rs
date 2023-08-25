@@ -17,9 +17,8 @@ use time::{format_description::well_known::Rfc3339, Duration, OffsetDateTime};
 
 use sibyls::{
     oracle::{
-        oracle_scheduler,
-        pricefeeds::ALL_PRICE_FEEDS,
-        DbValue, Oracle, pricefeeds::create_price_feed,
+        oracle_scheduler, pricefeeds::create_price_feed, pricefeeds::ALL_PRICE_FEEDS, DbValue,
+        Oracle,
     },
     AssetPair, AssetPairInfo, OracleConfig,
 };
@@ -309,7 +308,7 @@ async fn main() -> anyhow::Result<()> {
         .map(|asset_pair_info| asset_pair_info.asset_pair)
         .zip(asset_pair_infos.iter().cloned().map(|asset_pair_info| {
             let asset_pair = asset_pair_info.asset_pair;
-            let exclude_price_feeds =  asset_pair_info.exclude_price_feeds.clone();
+            let exclude_price_feeds = asset_pair_info.exclude_price_feeds.clone();
 
             // create oracle
             info!("creating oracle for {}", asset_pair);
