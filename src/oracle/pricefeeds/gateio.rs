@@ -17,6 +17,7 @@ impl PriceFeed for GateIo {
     fn translate_asset_pair(&self, asset_pair: AssetPair) -> &'static str {
         match asset_pair {
             AssetPair::BTCUSD => "BTC_USD",
+            AssetPair::BTCUSDT => "BTC_USDT",
         }
     }
 
@@ -47,14 +48,14 @@ impl PriceFeed for GateIo {
 
 #[cfg(test)]
 mod tests {
-    use crate::AssetPair::BTCUSD;
+    use crate::AssetPair::*;
 
     use super::*;
 
     #[tokio::test]
     async fn retrieve() {
         let feed = GateIo {};
-        let price = feed.retrieve_price(BTCUSD, OffsetDateTime::now_utc()).await;
+        let price = feed.retrieve_price(BTCUSDT, OffsetDateTime::now_utc()).await;
         match price {
             Ok(_) => assert!(true),
             Err(_) => assert!(false, "{:#?}", &price),

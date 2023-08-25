@@ -6,6 +6,7 @@ use time::{serde::format_description, Duration, Time};
 #[derive(Copy, Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub enum AssetPair {
     BTCUSD,
+    BTCUSDT,
 }
 
 #[derive(Clone, Debug, Deserialize)]
