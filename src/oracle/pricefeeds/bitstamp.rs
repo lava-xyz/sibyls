@@ -82,7 +82,7 @@ mod tests {
         let price = feed.retrieve_price(BTCUSD, OffsetDateTime::now_utc()).await;
         match price {
             Ok(_) => assert!(true),
-            Err(_) => assert!(false, "{:#?}", &price)
+            Err(_) => assert!(false, "{:#?}", &price),
         }
     }
 }
