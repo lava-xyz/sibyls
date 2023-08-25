@@ -1,5 +1,5 @@
 use super::{
-    pricefeeds::{PriceFeed, Result as PriceFeedResult},
+    pricefeeds::{PriceFeed, PriceFeedError},
     DbValue, Oracle,
 };
 use crate::AssetPairInfo;
@@ -7,7 +7,7 @@ use chrono::Utc;
 use clokwerk::{AsyncScheduler, Interval, Job};
 use core::ptr;
 use futures::{stream, StreamExt};
-use log::info;
+use log::{error, info};
 use queues::{queue, IsQueue, Queue};
 use secp256k1_sys::{
     types::{c_int, c_uchar, c_void, size_t},
@@ -111,52 +111,66 @@ impl OracleScheduler {
                         self.next_attestation,
                     )
                     .await
+                    .map_err(|err| {
+                        error!("cannot retrieve price {}", err);
+                        err
+                    })
+                    .ok()
             })
-            .collect::<Vec<PriceFeedResult<_>>>()
+            .collect::<Vec<Option<f64>>>()
             .await
             .into_iter()
-            .collect::<PriceFeedResult<Vec<_>>>()?;
-        let avg_price = prices.iter().sum::<f64>() / prices.len() as f64;
-        let avg_price = avg_price.round() as u64;
-        info!(
-            "average price of {} is {}",
-            self.oracle.asset_pair_info.asset_pair, avg_price
-        );
-        let avg_price_binary = format!(
-            "{:0width$b}",
-            avg_price,
-            width = self.oracle.asset_pair_info.event_descriptor.num_digits as usize
-        );
-        let outcomes = avg_price_binary
-            .chars()
-            .map(|char| char.to_string())
-            .collect::<Vec<_>>();
-        let mut db_value = self
-            .db_values
-            .remove()
-            .expect("db_values should never be empty");
-        let attestation = build_attestation(
-            db_value
-                .0
-                .take()
-                .expect("immature db_values should always have outstanding_sk_nonces"),
-            &self.oracle.keypair,
-            &self.secp,
-            outcomes,
-        );
+            .filter(|p| p.is_some())
+            .map(|p| p.unwrap())
+            .collect::<Vec<f64>>();
 
-        db_value.2 = Some(attestation.encode());
-        db_value.3 = Some(avg_price);
-        info!(
-            "attesting with maturation {} and attestation {:#?}",
-            self.next_attestation, attestation
-        );
-        self.oracle.event_database.insert(
-            self.next_attestation.format(&Rfc3339).unwrap().into_bytes(),
-            serde_json::to_string(&db_value)?.into_bytes(),
-        )?;
-        self.next_attestation += self.oracle.oracle_config.frequency;
-        Ok(())
+        if prices.is_empty() {
+            Err(OracleSchedulerError::PriceFeedError(
+                PriceFeedError::InternalError("it seems all price feeds have failed".to_string()),
+            ))
+        } else {
+            let avg_price = prices.iter().sum::<f64>() / prices.len() as f64;
+            let avg_price = avg_price.round() as u64;
+            info!(
+                "average price of {} is {}",
+                self.oracle.asset_pair_info.asset_pair, avg_price
+            );
+            let avg_price_binary = format!(
+                "{:0width$b}",
+                avg_price,
+                width = self.oracle.asset_pair_info.event_descriptor.num_digits as usize
+            );
+            let outcomes = avg_price_binary
+                .chars()
+                .map(|char| char.to_string())
+                .collect::<Vec<_>>();
+            let mut db_value = self
+                .db_values
+                .remove()
+                .expect("db_values should never be empty");
+            let attestation = build_attestation(
+                db_value
+                    .0
+                    .take()
+                    .expect("immature db_values should always have outstanding_sk_nonces"),
+                &self.oracle.keypair,
+                &self.secp,
+                outcomes,
+            );
+
+            db_value.2 = Some(attestation.encode());
+            db_value.3 = Some(avg_price);
+            info!(
+                "attesting with maturation {} and attestation {:#?}",
+                self.next_attestation, attestation
+            );
+            self.oracle.event_database.insert(
+                self.next_attestation.format(&Rfc3339).unwrap().into_bytes(),
+                serde_json::to_string(&db_value)?.into_bytes(),
+            )?;
+            self.next_attestation += self.oracle.oracle_config.frequency;
+            Ok(())
+        }
     }
 }
 
@@ -170,10 +184,11 @@ pub fn init(
     tokio::spawn(async move {
         let (tx, mut rx) = mpsc::unbounded_channel();
         if let Err(err) = create_events(oracle, secp, pricefeeds, tx) {
-            panic!("oracle scheduler create_events error: {}", err);
-        }
-        while let Some(err) = rx.recv().await {
-            panic!("oracle scheduler error: {}", err);
+            error!("oracle scheduler create_events error: {}", err);
+        } else {
+            while let Some(err) = rx.recv().await {
+                error!("oracle scheduler error: {}", err);
+            }
         }
         // never be reached
         unreachable!()
