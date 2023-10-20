@@ -19,7 +19,7 @@ pub trait PriceFeed {
     async fn retrieve_price(&self, asset_pair: AssetPair, datetime: OffsetDateTime) -> Result<f64>;
 }
 
-pub static ALL_PRICE_FEEDS: &'static [&str] = &["bitstamp", "gateio", "kraken"];
+pub static ALL_PRICE_FEEDS: &[&str] = &["bitstamp", "gateio", "kraken"];
 
 pub fn create_price_feed(feed_id: &str) -> Result<Box<dyn PriceFeed + Send + Sync>> {
     match feed_id {

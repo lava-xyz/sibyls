@@ -51,7 +51,7 @@ impl Oracle {
     }
 }
 
-pub mod oracle_scheduler;
-pub use oracle_scheduler::messaging::EventDescriptor;
+pub use dlc_messages::oracle_msgs::EventDescriptor;
 
+pub mod oracle_scheduler;
 pub mod pricefeeds;
