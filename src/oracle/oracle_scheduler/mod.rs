@@ -165,8 +165,7 @@ impl OracleScheduler {
             );
 
             let mut attestation_bytes = Vec::new();
-            attestation
-                .write(&mut attestation_bytes)
+            write_as_tlv(&attestation, &mut attestation_bytes)
                 .expect("Error writing attestation");
 
             db_value.2 = Some(attestation_bytes);
@@ -348,8 +347,7 @@ fn create_event(
     )?;
 
     let mut announcement_bytes = Vec::new();
-    announcement
-        .write(&mut announcement_bytes)
+    write_as_tlv(&announcement, &mut announcement_bytes)
         .expect("Error writing announcement");
 
     let db_value = DbValue(Some(outstanding_sk_nonces), announcement_bytes, None, None);

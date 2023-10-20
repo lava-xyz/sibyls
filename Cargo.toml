@@ -32,7 +32,6 @@ sled = "0.34"
 thiserror = "1.0.31"
 time = { version = "0.3.9", features = ["formatting", "serde-human-readable"] }
 tokio = { version = "1.18.2", features = ["full"] }
-bitcoin_hashes = "0.13.0"
 
 [dev-dependencies]
 dlc = "~0.4.0"

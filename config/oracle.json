@@ -2,5 +2,5 @@
     "attestation_time": "08:00",
     "frequency": "1d",
     "announcement_offset": "7d8h",
-    "signing_version": "basic"
+    "signing_version": "dlc_v0"
 }
