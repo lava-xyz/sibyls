@@ -165,8 +165,7 @@ impl OracleScheduler {
             );
 
             let mut attestation_bytes = Vec::new();
-            write_as_tlv(&attestation, &mut attestation_bytes)
-                .expect("Error writing attestation");
+            write_as_tlv(&attestation, &mut attestation_bytes).expect("Error writing attestation");
 
             db_value.2 = Some(attestation_bytes);
             db_value.3 = Some(avg_price);
@@ -347,8 +346,7 @@ fn create_event(
     )?;
 
     let mut announcement_bytes = Vec::new();
-    write_as_tlv(&announcement, &mut announcement_bytes)
-        .expect("Error writing announcement");
+    write_as_tlv(&announcement, &mut announcement_bytes).expect("Error writing announcement");
 
     let db_value = DbValue(Some(outstanding_sk_nonces), announcement_bytes, None, None);
     info!(
@@ -470,7 +468,7 @@ mod tests {
         let (secret_key, public_key) = secp.generate_keypair(&mut rng);
         (secret_key, public_key)
     }
-    //
+
     fn signatures_to_secret(signatures: &[SchnorrSignature]) -> secp256k1_zkp::SecretKey {
         let s_values: Vec<Scalar> = signatures
             .iter()

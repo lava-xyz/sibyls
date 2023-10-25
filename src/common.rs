@@ -29,7 +29,6 @@ impl From<&EventDescriptor> for SerializableEventDescriptor {
                 precision: e.precision,
                 num_digits: e.nb_digits,
             },
-            // a dummy descriptor for all kind of enum events
             EnumEvent(_) => SerializableEventDescriptor {
                 base: 0,
                 is_signed: false,
