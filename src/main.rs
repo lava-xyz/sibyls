@@ -259,7 +259,7 @@ async fn main() -> anyhow::Result<()> {
             SecretKey::from_str(&secret_key)?
         }
     };
-    let keypair = KeyPair::from_secret_key(&secp, secret_key);
+    let keypair = KeyPair::from_secret_key(&secp, &secret_key);
     info!(
         "oracle keypair successfully generated, pubkey is {}",
         keypair.public_key().serialize().encode_hex::<String>()
@@ -328,7 +328,12 @@ async fn main() -> anyhow::Result<()> {
 
             info!("scheduling oracle events for {}", asset_pair);
             // schedule oracle events (announcements/attestations)
-            oracle_scheduler::init(oracle.clone(), secp.clone(), pricefeeds)?;
+            oracle_scheduler::init(
+                oracle.clone(),
+                secp.clone(),
+                pricefeeds,
+                oracle_config.signing_version,
+            )?;
 
             Ok(oracle)
         }))

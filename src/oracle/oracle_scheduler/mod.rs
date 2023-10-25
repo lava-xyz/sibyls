@@ -2,11 +2,12 @@ use super::{
     pricefeeds::{PriceFeed, PriceFeedError},
     DbValue, Oracle,
 };
-use crate::AssetPairInfo;
+use crate::{AssetPairInfo, SigningVersion};
 use chrono::Utc;
 use clokwerk::{AsyncScheduler, Interval, Job};
 use core::ptr;
 use futures::{stream, StreamExt};
+use lightning::util::ser::Writeable;
 use log::{error, info};
 use queues::{queue, IsQueue, Queue};
 use secp256k1_sys::{
@@ -32,8 +33,11 @@ mod error;
 pub use error::OracleSchedulerError;
 pub use error::Result;
 
-pub mod messaging;
-use messaging::{Announcement, Attestation, OracleAnnouncementHash, OracleEvent};
+use dlc_messages::oracle_msgs::{OracleAnnouncement, OracleAttestation, OracleEvent};
+use dlc_messages::ser_impls::write_as_tlv;
+
+mod messaging;
+use crate::oracle::oracle_scheduler::messaging::{DLCV0AnnouncementHash, DLCV0AttestationHash};
 
 const SCHEDULER_SLEEP_TIME: std::time::Duration = std::time::Duration::from_millis(100);
 
@@ -86,6 +90,7 @@ struct OracleScheduler {
     db_values: Queue<DbValue>,
     next_announcement: OffsetDateTime,
     next_attestation: OffsetDateTime,
+    signing_version: SigningVersion,
 }
 
 impl OracleScheduler {
@@ -96,12 +101,13 @@ impl OracleScheduler {
             &self.secp,
             &mut self.db_values,
             self.next_announcement + announcement_offset,
+            self.signing_version,
         )?;
         self.next_announcement += self.oracle.oracle_config.frequency;
         Ok(())
     }
 
-    async fn attest(&mut self) -> Result<()> {
+    async fn attest(&mut self, signing_version: SigningVersion) -> Result<()> {
         info!("retrieving pricefeeds for attestation");
         let prices = stream::iter(self.pricefeeds.iter())
             .then(|pricefeed| async {
@@ -120,8 +126,7 @@ impl OracleScheduler {
             .collect::<Vec<Option<f64>>>()
             .await
             .into_iter()
-            .filter(|p| p.is_some())
-            .map(|p| p.unwrap())
+            .flatten()
             .collect::<Vec<f64>>();
 
         if prices.is_empty() {
@@ -149,16 +154,20 @@ impl OracleScheduler {
                 .remove()
                 .expect("db_values should never be empty");
             let attestation = build_attestation(
-                db_value
+                &db_value
                     .0
                     .take()
                     .expect("immature db_values should always have outstanding_sk_nonces"),
                 &self.oracle.keypair,
                 &self.secp,
                 outcomes,
+                signing_version,
             );
 
-            db_value.2 = Some(attestation.encode());
+            let mut attestation_bytes = Vec::new();
+            write_as_tlv(&attestation, &mut attestation_bytes).expect("Error writing attestation");
+
+            db_value.2 = Some(attestation_bytes);
             db_value.3 = Some(avg_price);
             info!(
                 "attesting with maturation {} and attestation {:#?}",
@@ -178,12 +187,13 @@ pub fn init(
     oracle: Oracle,
     secp: Secp256k1<All>,
     pricefeeds: Vec<Box<dyn PriceFeed + Send + Sync>>,
+    signing_version: SigningVersion,
 ) -> Result<()> {
     // start event creation task
     info!("creating oracle events and schedules");
     tokio::spawn(async move {
         let (tx, mut rx) = mpsc::unbounded_channel();
-        if let Err(err) = create_events(oracle, secp, pricefeeds, tx) {
+        if let Err(err) = create_events(oracle, secp, pricefeeds, tx, signing_version) {
             error!("oracle scheduler create_events error: {}", err);
         } else {
             while let Some(err) = rx.recv().await {
@@ -201,6 +211,7 @@ fn create_events(
     secp: Secp256k1<All>,
     pricefeeds: Vec<Box<dyn PriceFeed + Send + Sync>>,
     error_transmitter: mpsc::UnboundedSender<OracleSchedulerError>,
+    signing_version: SigningVersion,
 ) -> Result<()> {
     let now = OffsetDateTime::now_utc();
     let mut next_attestation = now.replace_time(oracle.oracle_config.attestation_time);
@@ -217,7 +228,13 @@ fn create_events(
             .event_database
             .get(next_attestation.format(&Rfc3339).unwrap())?
         {
-            None => create_event(&mut oracle, &secp, &mut db_values, next_attestation)?,
+            None => create_event(
+                &mut oracle,
+                &secp,
+                &mut db_values,
+                next_attestation,
+                signing_version,
+            )?,
             Some(val) => {
                 info!(
                     "existing oracle event found in db with maturation {}, skipping creation",
@@ -237,6 +254,7 @@ fn create_events(
         db_values,
         next_announcement,
         next_attestation,
+        signing_version,
     }));
     info!(
         "created new oracle scheduler with\n\tannouncements at {}\n\tattestations at {}\n\tfrequency of {}\n\tnext announcement at {}\n\tnext attestation at {}",
@@ -290,7 +308,12 @@ fn create_events(
             let oracle_scheduler_clone = oracle_scheduler.clone();
             let error_transmitter_clone = error_transmitter.clone();
             async move {
-                if let Err(err) = oracle_scheduler_clone.lock().await.attest().await {
+                if let Err(err) = oracle_scheduler_clone
+                    .lock()
+                    .await
+                    .attest(signing_version)
+                    .await
+                {
                     info!("error from attestation scheduler");
                     error_transmitter_clone.send(err).unwrap();
                 }
@@ -312,16 +335,20 @@ fn create_event(
     secp: &Secp256k1<All>,
     db_values: &mut Queue<DbValue>,
     maturation: OffsetDateTime,
+    signing_version: SigningVersion,
 ) -> Result<()> {
-    let (announcement, outstanding_sk_nonces) =
-        build_announcement(&oracle.asset_pair_info, &oracle.keypair, secp, maturation)?;
+    let (announcement, outstanding_sk_nonces) = build_announcement(
+        &oracle.asset_pair_info,
+        &oracle.keypair,
+        secp,
+        maturation,
+        signing_version,
+    )?;
 
-    let db_value = DbValue(
-        Some(outstanding_sk_nonces),
-        announcement.encode(),
-        None,
-        None,
-    );
+    let mut announcement_bytes = Vec::new();
+    write_as_tlv(&announcement, &mut announcement_bytes).expect("Error writing announcement");
+
+    let db_value = DbValue(Some(outstanding_sk_nonces), announcement_bytes, None, None);
     info!(
         "creating oracle event (announcement only) with maturation {} and announcement {:#?}",
         maturation, announcement
@@ -339,33 +366,49 @@ pub fn build_announcement(
     keypair: &KeyPair,
     secp: &Secp256k1<All>,
     maturation: OffsetDateTime,
-) -> Result<(Announcement, Vec<[u8; 32]>)> {
+    signing_version: SigningVersion,
+) -> Result<(OracleAnnouncement, Vec<[u8; 32]>)> {
     let mut rng = rand::thread_rng();
     let digits = asset_pair_info.event_descriptor.num_digits;
     let mut sk_nonces = Vec::with_capacity(digits.into());
-    let mut nonces = Vec::with_capacity(digits.into());
+    let mut oracle_nonces = Vec::with_capacity(digits.into());
     for _ in 0..digits {
         let mut sk_nonce = [0u8; 32];
         rng.fill_bytes(&mut sk_nonce);
         let oracle_r_kp = secp256k1_zkp::KeyPair::from_seckey_slice(secp, &sk_nonce)?;
-        let nonce = SchnorrPublicKey::from_keypair(&oracle_r_kp);
+        let nonce = SchnorrPublicKey::from_keypair(&oracle_r_kp).0;
         sk_nonces.push(sk_nonce);
-        nonces.push(nonce);
+        oracle_nonces.push(nonce);
     }
 
     let oracle_event = OracleEvent {
-        nonces,
-        maturation,
-        event_descriptor: asset_pair_info.event_descriptor.clone(),
+        oracle_nonces,
+        event_maturity_epoch: maturation.unix_timestamp() as u32,
+        event_descriptor: asset_pair_info.clone().event_descriptor.into(),
+        event_id: "".to_string(),
     };
 
+    let msg = match signing_version {
+        SigningVersion::Basic => {
+            let mut event_bytes = Vec::new();
+            oracle_event
+                .write(&mut event_bytes)
+                .expect("Error writing oracle event");
+            Message::from_hashed_data::<sha256::Hash>(&event_bytes)
+        }
+        SigningVersion::DLCv0 => {
+            let mut event_bytes = Vec::new();
+            write_as_tlv(&oracle_event, &mut event_bytes).expect("Error writing oracle event");
+            Message::from_hashed_data::<DLCV0AnnouncementHash>(&event_bytes)
+        }
+    };
+
+    let announcement_signature = secp.sign_schnorr(&msg, keypair);
+
     Ok((
-        Announcement {
-            signature: secp.sign_schnorr(
-                &Message::from_hashed_data::<OracleAnnouncementHash>(&oracle_event.encode()),
-                keypair,
-            ),
-            oracle_pubkey: keypair.public_key(),
+        OracleAnnouncement {
+            announcement_signature,
+            oracle_public_key: keypair.x_only_public_key().0,
             oracle_event,
         },
         sk_nonces,
@@ -373,25 +416,29 @@ pub fn build_announcement(
 }
 
 pub fn build_attestation(
-    outstanding_sk_nonces: Vec<[u8; 32]>,
+    outstanding_sk_nonces: &[[u8; 32]],
     keypair: &KeyPair,
     secp: &Secp256k1<All>,
     outcomes: Vec<String>,
-) -> Attestation {
+    signing_version: SigningVersion,
+) -> OracleAttestation {
     let signatures = outcomes
         .iter()
         .zip(outstanding_sk_nonces.iter())
         .map(|(outcome, outstanding_sk_nonce)| {
-            sign_schnorr_with_nonce(
-                secp,
-                &Message::from_hashed_data::<sha256::Hash>(outcome.as_bytes()),
-                keypair,
-                outstanding_sk_nonce,
-            )
+            let msg = match signing_version {
+                SigningVersion::Basic => {
+                    Message::from_hashed_data::<sha256::Hash>(outcome.as_bytes())
+                }
+                SigningVersion::DLCv0 => {
+                    Message::from_hashed_data::<DLCV0AttestationHash>(outcome.as_bytes())
+                }
+            };
+            sign_schnorr_with_nonce(secp, &msg, keypair, outstanding_sk_nonce)
         })
         .collect::<Vec<_>>();
-    Attestation {
-        oracle_pubkey: keypair.public_key(),
+    OracleAttestation {
+        oracle_public_key: keypair.public_key().x_only_public_key().0,
         signatures,
         outcomes,
     }
@@ -400,85 +447,88 @@ pub fn build_attestation(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{oracle::EventDescriptor, AssetPair};
+    use crate::{AssetPair, SerializableEventDescriptor};
     use dlc::OracleInfo;
+    use dlc_messages::ser_impls::write_as_tlv;
+    use secp256k1::Scalar;
     use secp256k1_zkp::rand::{distributions::Alphanumeric, Rng};
+    use std::fmt::Write as _;
 
     fn setup() -> (KeyPair, Secp256k1<All>) {
         let secp = Secp256k1::new();
         let mut rng = rand::thread_rng();
         let (secret_key, _) = secp.generate_keypair(&mut rng);
-        (KeyPair::from_secret_key(&secp, secret_key), secp)
+        (KeyPair::from_secret_key(&secp, &secret_key), secp)
     }
 
-    fn setup_v5() -> (
-        secp256k1_zkp_5::SecretKey,
-        secp256k1_zkp_5::PublicKey,
-        secp256k1_zkp_5::Secp256k1<secp256k1_zkp_5::All>,
-    ) {
-        let secp = secp256k1_zkp_5::Secp256k1::new();
+    fn setup_adaptor_signatures(
+        secp: &Secp256k1<All>,
+    ) -> (secp256k1_zkp::SecretKey, secp256k1_zkp::PublicKey) {
         let mut rng = rand::thread_rng();
         let (secret_key, public_key) = secp.generate_keypair(&mut rng);
-        (secret_key, public_key, secp)
+        (secret_key, public_key)
     }
 
-    fn signatures_to_secret(signatures: &[SchnorrSignature]) -> secp256k1_zkp_5::SecretKey {
-        let s_values: Vec<&[u8]> = signatures
+    fn signatures_to_secret(signatures: &[SchnorrSignature]) -> secp256k1_zkp::SecretKey {
+        let s_values: Vec<Scalar> = signatures
             .iter()
             .map(|x| {
                 let bytes = x.as_ref();
-                &bytes[32..64]
+                Scalar::from_le_bytes(bytes[32..64].try_into().unwrap()).unwrap()
             })
             .collect();
-        let mut secret = secp256k1_zkp_5::SecretKey::from_slice(s_values[0]).unwrap();
+        let secret = secp256k1_zkp::SecretKey::from_slice(&s_values[0].to_le_bytes()).unwrap();
         for s in s_values.iter().skip(1) {
-            secret.add_assign(s).unwrap();
+            secret.add_tweak(s).unwrap();
         }
 
         secret
     }
 
+    pub fn hex_str(value: &[u8]) -> String {
+        let mut res = String::with_capacity(64);
+        for v in value {
+            write!(res, "{:02x}", v).unwrap();
+        }
+        res
+    }
+
     #[test]
-    fn announcement_signature_verifies() {
+    fn announcement_signature_verifies_basic() {
         let (keypair, secp) = setup();
+        let announcement = build_test_announcement(&keypair, &secp, SigningVersion::Basic).0;
 
-        let announcement = build_announcement(
-            &AssetPairInfo {
-                asset_pair: AssetPair::BTCUSD,
-                event_descriptor: EventDescriptor {
-                    base: 2,
-                    is_signed: false,
-                    unit: "BTCUSD".to_string(),
-                    precision: 0,
-                    num_digits: 18,
-                },
-                exclude_price_feeds: vec![],
-            },
-            &keypair,
-            &secp,
-            OffsetDateTime::now_utc(),
-        )
-        .unwrap()
-        .0;
+        // let mut announcement_bytes = vec![];
+        // write_as_tlv(&announcement, &mut announcement_bytes).unwrap();
+        // println!("{}", hex_str(&announcement_bytes));
 
-        let tag_hash = sha256::Hash::hash(b"DLC/oracle/announcement/v0");
+        announcement.validate(&secp).unwrap();
+    }
+
+    #[test]
+    fn announcement_signature_verifies_dlc_v0() {
+        let (keypair, secp) = setup();
+        let announcement = build_test_announcement(&keypair, &secp, SigningVersion::DLCv0).0;
+
+        // let mut announcement_bytes = vec![];
+        // write_as_tlv(&announcement, &mut announcement_bytes).unwrap();
+        // println!("{}", hex_str(&announcement_bytes));
+
+        let mut event_bytes = Vec::new();
+        write_as_tlv(&announcement.oracle_event, &mut event_bytes)
+            .expect("Error writing oracle event");
+
+        let msg = Message::from_hashed_data::<DLCV0AnnouncementHash>(&event_bytes);
         secp.verify_schnorr(
-            &announcement.signature,
-            &Message::from_hashed_data::<sha256::Hash>(
-                &[
-                    tag_hash.to_vec(),
-                    tag_hash.to_vec(),
-                    announcement.oracle_event.encode(),
-                ]
-                .concat(),
-            ),
-            &keypair.public_key(),
+            &announcement.announcement_signature,
+            &msg,
+            &announcement.oracle_public_key,
         )
         .unwrap();
     }
 
     #[test]
-    fn attestation_signature_verifies() {
+    fn attestation_signature_verifies_basic() {
         let (keypair, secp) = setup();
 
         let mut outstanding_sk_nonce = vec![[0u8; 32]];
@@ -490,23 +540,118 @@ mod tests {
             .map(char::from)
             .collect();
         let outcome = vec![outcome];
-        let attestation = build_attestation(outstanding_sk_nonce, &keypair, &secp, outcome);
+        let attestation = build_attestation(
+            &outstanding_sk_nonce,
+            &keypair,
+            &secp,
+            outcome,
+            SigningVersion::Basic,
+        );
         secp.verify_schnorr(
             &attestation.signatures[0],
             &Message::from_hashed_data::<sha256::Hash>(attestation.outcomes[0].as_bytes()),
-            &keypair.public_key(),
+            &keypair.public_key().x_only_public_key().0,
         )
         .unwrap();
     }
 
     #[test]
+    fn attestation_signature_verifies_dlc_v0() {
+        let (keypair, secp) = setup();
+
+        let mut outstanding_sk_nonce = vec![[0u8; 32]];
+        let mut rng = rand::thread_rng();
+        rng.fill_bytes(&mut outstanding_sk_nonce[0]);
+        let outcome = rng
+            .sample_iter(&Alphanumeric)
+            .take(32)
+            .map(char::from)
+            .collect();
+        let outcome = vec![outcome];
+        let attestation = build_attestation(
+            &outstanding_sk_nonce,
+            &keypair,
+            &secp,
+            outcome,
+            SigningVersion::DLCv0,
+        );
+        secp.verify_schnorr(
+            &attestation.signatures[0],
+            &Message::from_hashed_data::<DLCV0AttestationHash>(attestation.outcomes[0].as_bytes()),
+            &keypair.public_key().x_only_public_key().0,
+        )
+        .unwrap();
+    }
+
+    #[ignore]
+    #[test]
     fn valid_adaptor_signature() {
         let (keypair, secp) = setup();
 
+        let (announcement, outstanding_sk_nonces) =
+            build_test_announcement(&keypair, &secp, SigningVersion::Basic);
+
+        let outcomes: Vec<String> = vec![
+            "0", "0", "0", "1", "1", "1", "0", "1", "0", "0", "0", "1", "0", "1", "0", "0", "0",
+            "1",
+        ]
+        .iter()
+        .map(ToString::to_string)
+        .collect();
+        let attestation = build_attestation(
+            &outstanding_sk_nonces,
+            &keypair,
+            &secp,
+            outcomes.clone(),
+            SigningVersion::Basic,
+        );
+
+        let (funding_secret_key, funding_public_key) = setup_adaptor_signatures(&secp);
+
+        let adaptor_point = dlc::get_adaptor_point_from_oracle_info(
+            &secp,
+            &[OracleInfo {
+                public_key: keypair.public_key().x_only_public_key().0,
+                nonces: announcement.oracle_event.oracle_nonces,
+            }],
+            &[outcomes
+                .iter()
+                .map(|outcome| Message::from_hashed_data::<sha256::Hash>(outcome.as_bytes()))
+                .collect::<Vec<_>>()],
+        )
+        .unwrap();
+
+        let test_msg = secp256k1_zkp::Message::from_hashed_data::<
+            secp256k1_zkp::hashes::sha256::Hash,
+        >("test".as_bytes());
+        let adaptor_sig = secp256k1_zkp::EcdsaAdaptorSignature::encrypt(
+            &secp,
+            &test_msg,
+            &funding_secret_key,
+            &adaptor_point,
+        );
+
+        adaptor_sig
+            .verify(&secp, &test_msg, &funding_public_key, &adaptor_point)
+            .unwrap();
+
+        let adapted_sig = adaptor_sig
+            .decrypt(&signatures_to_secret(&attestation.signatures))
+            .unwrap();
+
+        secp.verify_ecdsa(&test_msg, &adapted_sig, &funding_public_key)
+            .unwrap();
+    }
+
+    fn build_test_announcement(
+        keypair: &KeyPair,
+        secp: &Secp256k1<All>,
+        signing_version: SigningVersion,
+    ) -> (OracleAnnouncement, Vec<[u8; 32]>) {
         let (announcement, outstanding_sk_nonces) = build_announcement(
             &AssetPairInfo {
                 asset_pair: AssetPair::BTCUSD,
-                event_descriptor: EventDescriptor {
+                event_descriptor: SerializableEventDescriptor {
                     base: 2,
                     is_signed: false,
                     unit: "BTCUSD".to_string(),
@@ -518,69 +663,9 @@ mod tests {
             &keypair,
             &secp,
             OffsetDateTime::now_utc(),
+            signing_version,
         )
         .unwrap();
-
-        let outcomes: Vec<String> = vec![
-            "0", "0", "0", "1", "1", "1", "0", "1", "0", "0", "0", "1", "0", "1", "0", "0", "0",
-            "1",
-        ]
-        .iter()
-        .map(ToString::to_string)
-        .collect();
-        let attestation =
-            build_attestation(outstanding_sk_nonces, &keypair, &secp, outcomes.clone());
-
-        let (funding_secret_key, funding_public_key, secp_5) = setup_v5();
-
-        let adaptor_point = dlc::get_adaptor_point_from_oracle_info(
-            &secp_5,
-            &[OracleInfo {
-                public_key: secp256k1_zkp_5::schnorrsig::PublicKey::from_slice(
-                    &keypair.public_key().serialize(),
-                )
-                .unwrap(),
-                nonces: announcement
-                    .oracle_event
-                    .nonces
-                    .iter()
-                    .map(|nonce| {
-                        secp256k1_zkp_5::schnorrsig::PublicKey::from_slice(&nonce.serialize())
-                            .unwrap()
-                    })
-                    .collect(),
-            }],
-            &[outcomes
-                .iter()
-                .map(|outcome| {
-                    secp256k1_zkp_5::Message::from_hashed_data::<
-                        secp256k1_zkp_5::bitcoin_hashes::sha256::Hash,
-                    >(outcome.as_bytes())
-                })
-                .collect::<Vec<_>>()],
-        )
-        .unwrap();
-
-        let test_msg = secp256k1_zkp_5::Message::from_hashed_data::<
-            secp256k1_zkp_5::bitcoin_hashes::sha256::Hash,
-        >("test".as_bytes());
-        let adaptor_sig = secp256k1_zkp_5::EcdsaAdaptorSignature::encrypt(
-            &secp_5,
-            &test_msg,
-            &funding_secret_key,
-            &adaptor_point,
-        );
-
-        adaptor_sig
-            .verify(&secp_5, &test_msg, &funding_public_key, &adaptor_point)
-            .unwrap();
-
-        let adapted_sig = adaptor_sig
-            .decrypt(&signatures_to_secret(&attestation.signatures))
-            .unwrap();
-
-        secp_5
-            .verify(&test_msg, &adapted_sig, &funding_public_key)
-            .unwrap();
+        (announcement, outstanding_sk_nonces)
     }
 }

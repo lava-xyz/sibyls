@@ -1,4 +1,5 @@
-use crate::oracle::EventDescriptor;
+use dlc_messages::oracle_msgs::EventDescriptor::{DigitDecompositionEvent, EnumEvent};
+use dlc_messages::oracle_msgs::{DigitDecompositionEventDescriptor, EventDescriptor};
 use serde::{Deserialize, Serialize};
 use std::fmt::{self, Debug, Display, Formatter};
 use time::{serde::format_description, Duration, Time};
@@ -10,9 +11,51 @@ pub enum AssetPair {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+pub struct SerializableEventDescriptor {
+    pub base: u16,
+    pub is_signed: bool,
+    pub unit: String,
+    pub precision: i32,
+    pub num_digits: u16,
+}
+
+impl From<&EventDescriptor> for SerializableEventDescriptor {
+    fn from(ed: &EventDescriptor) -> SerializableEventDescriptor {
+        match ed {
+            DigitDecompositionEvent(e) => SerializableEventDescriptor {
+                base: e.base,
+                is_signed: e.is_signed,
+                unit: e.unit.clone(),
+                precision: e.precision,
+                num_digits: e.nb_digits,
+            },
+            EnumEvent(_) => SerializableEventDescriptor {
+                base: 0,
+                is_signed: false,
+                unit: "".to_string(),
+                precision: 0,
+                num_digits: 0,
+            },
+        }
+    }
+}
+
+impl From<SerializableEventDescriptor> for EventDescriptor {
+    fn from(val: SerializableEventDescriptor) -> Self {
+        DigitDecompositionEvent(DigitDecompositionEventDescriptor {
+            base: val.base,
+            is_signed: val.is_signed,
+            unit: val.unit.clone(),
+            precision: val.precision,
+            nb_digits: val.num_digits,
+        })
+    }
+}
+
+#[derive(Clone, Debug, Deserialize)]
 pub struct AssetPairInfo {
     pub asset_pair: AssetPair,
-    pub event_descriptor: EventDescriptor,
+    pub event_descriptor: SerializableEventDescriptor,
     pub exclude_price_feeds: Vec<String>,
 }
 
@@ -76,6 +119,14 @@ mod standard_duration {
 }
 
 #[derive(Copy, Clone, Debug, Deserialize, Serialize)]
+pub enum SigningVersion {
+    #[serde(rename = "basic")]
+    Basic,
+    #[serde(rename = "dlc_v0")]
+    DLCv0,
+}
+
+#[derive(Copy, Clone, Debug, Deserialize, Serialize)]
 pub struct OracleConfig {
     #[serde(with = "standard_time")]
     pub attestation_time: Time,
@@ -83,4 +134,5 @@ pub struct OracleConfig {
     pub frequency: Duration,
     #[serde(with = "standard_duration")]
     pub announcement_offset: Duration,
+    pub signing_version: SigningVersion,
 }
