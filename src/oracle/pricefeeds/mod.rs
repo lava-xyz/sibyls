@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use time::OffsetDateTime;
 
+pub use bitfinex::Bitfinex;
 pub use bitstamp::Bitstamp;
 pub use error::PriceFeedError;
 pub use error::Result;
@@ -19,17 +20,19 @@ pub trait PriceFeed {
     async fn retrieve_price(&self, asset_pair: AssetPair, datetime: OffsetDateTime) -> Result<f64>;
 }
 
-pub static ALL_PRICE_FEEDS: &[&str] = &["bitstamp", "gateio", "kraken"];
+pub static ALL_PRICE_FEEDS: &[&str] = &["bitstamp", "gateio", "kraken", "bitfinex"];
 
 pub fn create_price_feed(feed_id: &str) -> Result<Box<dyn PriceFeed + Send + Sync>> {
     match feed_id {
         "bitstamp" => Ok(Box::new(Bitstamp {})),
         "gateio" => Ok(Box::new(GateIo {})),
         "kraken" => Ok(Box::new(Kraken {})),
+        "bitfinex" => Ok(Box::new(Bitfinex {})),
         _ => Err(InternalError(format!("unknown price feed {}", feed_id))),
     }
 }
 
+mod bitfinex;
 mod bitstamp;
 mod gateio;
 mod kraken;
