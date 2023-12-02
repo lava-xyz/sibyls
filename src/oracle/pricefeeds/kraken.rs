@@ -25,16 +25,16 @@ impl PriceFeed for Kraken {
         "kraken"
     }
 
-    fn translate_asset_pair(&self, asset_pair: AssetPair) -> &'static str {
+    fn translate_asset_pair(&self, asset_pair: AssetPair) -> Result<&'static str> {
         match asset_pair {
-            AssetPair::BTCUSD => "XXBTZUSD",
-            AssetPair::BTCUSDT => "XXBTZUSDT",
+            AssetPair::BTCUSD => Ok("XXBTZUSD"),
+            AssetPair::BTCUSDT => Ok("XXBTZUSDT"),
         }
     }
 
     async fn retrieve_price(&self, asset_pair: AssetPair, instant: OffsetDateTime) -> Result<f64> {
         let client = Client::new();
-        let asset_pair_translation = self.translate_asset_pair(asset_pair);
+        let asset_pair_translation = self.translate_asset_pair(asset_pair).unwrap();
         let start_time = instant.unix_timestamp();
         info!("sending kraken http request");
         let res: Response = client

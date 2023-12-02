@@ -14,10 +14,10 @@ impl PriceFeed for GateIo {
         "gateio"
     }
 
-    fn translate_asset_pair(&self, asset_pair: AssetPair) -> &'static str {
+    fn translate_asset_pair(&self, asset_pair: AssetPair) -> Result<&'static str> {
         match asset_pair {
-            AssetPair::BTCUSD => "BTC_USD",
-            AssetPair::BTCUSDT => "BTC_USDT",
+            AssetPair::BTCUSD => Ok("BTC_USD"),
+            AssetPair::BTCUSDT => Ok("BTC_USDT"),
         }
     }
 
@@ -28,7 +28,7 @@ impl PriceFeed for GateIo {
         let res: Vec<Vec<Value>> = client
             .get("https://api.gateio.ws/api/v4/spot/candlesticks")
             .query(&[
-                ("currency_pair", self.translate_asset_pair(asset_pair)),
+                ("currency_pair", self.translate_asset_pair(asset_pair).unwrap()),
                 ("from", &start_time.to_string()),
                 ("limit", "1"),
             ])
