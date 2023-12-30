@@ -3,11 +3,11 @@ use time::OffsetDateTime;
 
 pub use bitfinex::Bitfinex;
 pub use bitstamp::Bitstamp;
+pub use deribit::Deribit;
 pub use error::PriceFeedError;
 pub use error::Result;
 pub use gateio::GateIo;
 pub use kraken::Kraken;
-pub use deribit::Deribit;
 
 use crate::oracle::pricefeeds::PriceFeedError::InternalError;
 use crate::AssetPair;
@@ -36,6 +36,6 @@ pub fn create_price_feed(feed_id: &str) -> Result<Box<dyn PriceFeed + Send + Syn
 
 mod bitfinex;
 mod bitstamp;
+mod deribit;
 mod gateio;
 mod kraken;
-mod deribit;

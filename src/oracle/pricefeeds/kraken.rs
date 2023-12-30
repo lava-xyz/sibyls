@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use log::info;
+use log::{debug, info};
 use reqwest::Client;
 use serde::Deserialize;
 use serde_json::Value;
@@ -36,7 +36,7 @@ impl PriceFeed for Kraken {
         let client = Client::new();
         let asset_pair_translation = self.translate_asset_pair(asset_pair).unwrap();
         let start_time = instant.unix_timestamp();
-        info!("sending kraken http request");
+        info!("sending kraken http request {asset_pair} {instant}");
         let res: Response = client
             .get("https://api.kraken.com/0/public/OHLC")
             .query(&[
@@ -47,7 +47,7 @@ impl PriceFeed for Kraken {
             .await?
             .json()
             .await?;
-        info!("received response: {:#?}", res);
+        debug!("received kraken response: {:#?}", res);
 
         if !res.error.is_empty() {
             return Err(PriceFeedError::InternalError(format!(
@@ -61,7 +61,9 @@ impl PriceFeed for Kraken {
             .get(asset_pair_translation)
             .ok_or(PriceFeedError::PriceNotAvailableError(asset_pair, instant))?;
 
-        Ok(res[0][1].as_str().unwrap().parse().unwrap())
+        let price = res[0][1].as_str().unwrap().parse().unwrap();
+        info!("kraken price {price}");
+        Ok(price)
     }
 }
 
