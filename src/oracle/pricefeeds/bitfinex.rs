@@ -1,7 +1,7 @@
 use super::{PriceFeed, PriceFeedError, Result};
 use crate::AssetPair;
 use async_trait::async_trait;
-use log::info;
+use log::{debug, info};
 use reqwest::Client;
 use time::OffsetDateTime;
 
@@ -27,7 +27,7 @@ impl PriceFeed for Bitfinex {
         let asset_pair_translation = self.translate_asset_pair(asset_pair).unwrap();
         let start_time: i64 = instant.unix_timestamp();
 
-        info!("sending bitfinex http request");
+        info!("sending bitfinex http request {asset_pair} {instant}");
         let res: Response = client
             .get(format!(
                 "https://api-pub.bitfinex.com/v2/trades/{}/hist",
@@ -45,8 +45,10 @@ impl PriceFeed for Bitfinex {
             ));
         }
 
-        info!("received response: {:#?}", res[0][3]);
-        Ok(res[0][3].to_string().parse().unwrap())
+        debug!("received bitfinex response: {:#?}", res);
+        let price = res[0][3].to_string().parse().unwrap();
+        info!("bitfinex price: {price}");
+        Ok(price)
     }
 }
 

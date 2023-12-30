@@ -1,7 +1,7 @@
 use super::{PriceFeed, PriceFeedError, Result};
 use crate::AssetPair;
 use async_trait::async_trait;
-use log::info;
+use log::{debug, info};
 use reqwest::Client;
 use serde::Deserialize;
 use serde_json::Value;
@@ -43,7 +43,7 @@ impl PriceFeed for Bitstamp {
         let client = Client::new();
         let asset_pair_translation = self.translate_asset_pair(asset_pair).unwrap();
         let start_time = instant.unix_timestamp();
-        info!("sending bitstamp http request");
+        info!("sending bitstamp http request {asset_pair} {instant}");
         let res: Response = client
             .get(format!(
                 "https://www.bitstamp.net/api/v2/ohlc/{}",
@@ -58,7 +58,7 @@ impl PriceFeed for Bitstamp {
             .await?
             .json()
             .await?;
-        info!("received response: {:#?}", res);
+        debug!("received bitstamp response: {:#?}", res);
 
         if let Some(errs) = res.errors {
             return Err(PriceFeedError::InternalError(format!(
@@ -71,7 +71,9 @@ impl PriceFeed for Bitstamp {
             )));
         }
 
-        Ok(res.data.unwrap().ohlc[0].open.parse().unwrap())
+        let price = res.data.unwrap().ohlc[0].open.parse().unwrap();
+        info!("bitstamp price {price}");
+        Ok(price)
     }
 }
 

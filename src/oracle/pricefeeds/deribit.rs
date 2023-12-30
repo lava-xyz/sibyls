@@ -1,10 +1,10 @@
 use super::{PriceFeed, PriceFeedError, Result};
 use crate::AssetPair;
+use log::{debug, info};
 use reqwest::Client;
 use serde::Deserialize;
-use time::OffsetDateTime;
 use serde_json::Value;
-use log::info;
+use time::OffsetDateTime;
 
 #[derive(Deserialize, Debug)]
 struct Response {
@@ -35,7 +35,11 @@ impl PriceFeed for Deribit {
     fn translate_asset_pair(&self, asset_pair: AssetPair) -> Result<&'static str> {
         match asset_pair {
             AssetPair::BTCUSD => Ok("BTC"),
-            AssetPair::BTCUSDT => return Err(PriceFeedError::InternalError(format!("deribit does not support USDT"))),
+            AssetPair::BTCUSDT => {
+                return Err(PriceFeedError::InternalError(format!(
+                    "deribit does not support USDT"
+                )))
+            }
         }
     }
 
@@ -43,7 +47,7 @@ impl PriceFeed for Deribit {
         let client = Client::new();
         let asset_pair_translation = self.translate_asset_pair(asset_pair).unwrap();
         let start_time = instant.unix_timestamp() * 1000;
-        info!("sending deribit http request");
+        info!("sending deribit http request {asset_pair} {instant}");
         let res: Response = client
             .get("https://www.deribit.com/api/v2/public/get_last_settlements_by_currency")
             .query(&[
@@ -56,8 +60,8 @@ impl PriceFeed for Deribit {
             .await?
             .json()
             .await?;
-        
-        info!("received response: {:#?}", res);
+
+        debug!("received deribit response: {:#?}", res);
 
         if let Some(error) = res.error {
             return Err(PriceFeedError::InternalError(format!(
@@ -71,6 +75,7 @@ impl PriceFeed for Deribit {
             .ok_or(PriceFeedError::PriceNotAvailableError(asset_pair, instant))?;
 
         let index_price = res.settlements[0].index_price;
+        info!("deribit price {index_price}");
         Ok(index_price)
     }
 }
