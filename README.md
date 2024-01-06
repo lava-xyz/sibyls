@@ -173,7 +173,7 @@ There are three configurable parameters for the oracle:
 | `attestation_time`    | `([0-1][0-9]\|2[0-3]):[0-5][0-9]`                                                                                                                                            | time of attestation, in 24-hour format                                                                                |
 | `frequency`           | `(\d+(nsec\|ns\|usec\|us\|msec\|ms\|seconds\|second\|sec\|s\|minutes\|minute\|min\|m\|hours\|hour\|hr\|h\|days\|day\|d\|weeks\|week\|w\|months\|month\|M\|years\|year\|y))+` | frequency of attestation                                                                                              |
 | `announcement_offset` | `(\d+(nsec\|ns\|usec\|us\|msec\|ms\|seconds\|second\|sec\|s\|minutes\|minute\|min\|m\|hours\|hour\|hr\|h\|days\|day\|d\|weeks\|week\|w\|months\|month\|M\|years\|year\|y))+` | offset from attestation for announcement, e.g. with an offset of `5h` announcements happen at `attestation_time - 5h` |
-| `price_aggregation_type` | `(avg|median)` | method for aggregating prices collected from pricefeeds |
+| `price_aggregation_type` | `(avg\|median)` | method for aggregating prices collected from pricefeeds |
 
 The program defaults are located in `config/oracle.json`.
 
