@@ -333,6 +333,7 @@ async fn main() -> anyhow::Result<()> {
                 secp.clone(),
                 pricefeeds,
                 oracle_config.signing_version,
+                oracle_config.price_aggregation_type,
             )?;
 
             Ok(oracle)
