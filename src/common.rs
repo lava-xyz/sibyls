@@ -127,6 +127,14 @@ pub enum SigningVersion {
 }
 
 #[derive(Copy, Clone, Debug, Deserialize, Serialize)]
+pub enum AggregationType {
+    #[serde(rename = "avg")]
+    Average,
+    #[serde(rename = "median")]
+    Median,
+}
+
+#[derive(Copy, Clone, Debug, Deserialize, Serialize)]
 pub struct OracleConfig {
     #[serde(with = "standard_time")]
     pub attestation_time: Time,
@@ -135,4 +143,5 @@ pub struct OracleConfig {
     #[serde(with = "standard_duration")]
     pub announcement_offset: Duration,
     pub signing_version: SigningVersion,
+    pub price_aggregation_type: AggregationType,
 }
