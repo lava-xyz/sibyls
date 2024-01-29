@@ -8,6 +8,7 @@
             "precision": 0,
             "num_digits": 18
         },
+        "include_price_feeds": [],
         "exclude_price_feeds": []
     }
 ]

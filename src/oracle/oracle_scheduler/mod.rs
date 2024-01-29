@@ -792,6 +792,7 @@ mod tests {
                     precision: 0,
                     num_digits: 18,
                 },
+                include_price_feeds: vec![],
                 exclude_price_feeds: vec![],
             },
             &keypair,
