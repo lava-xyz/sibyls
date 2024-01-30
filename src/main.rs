@@ -7,6 +7,7 @@ use hex::ToHex;
 use secp256k1_zkp::{rand, KeyPair, Secp256k1, SecretKey};
 use serde::{Deserialize, Serialize};
 use sled::IVec;
+use std::process::exit;
 use std::{
     collections::HashMap,
     fs::{self, File},
@@ -215,7 +216,8 @@ async fn config(
             .values()
             .next()
             .expect("no asset pairs recorded")
-            .oracle_config,
+            .oracle_config
+            .clone(),
     ))
 }
 
@@ -308,25 +310,42 @@ async fn main() -> anyhow::Result<()> {
         .map(|asset_pair_info| asset_pair_info.asset_pair)
         .zip(asset_pair_infos.iter().cloned().map(|asset_pair_info| {
             let asset_pair = asset_pair_info.asset_pair;
+            let include_price_feeds = asset_pair_info.include_price_feeds.clone();
             let exclude_price_feeds = asset_pair_info.exclude_price_feeds.clone();
 
             // create oracle
             info!("creating oracle for {}", asset_pair);
-            let oracle = Oracle::new(oracle_config, asset_pair_info, keypair)?;
+            let oracle = Oracle::new(oracle_config.clone(), asset_pair_info, keypair)?;
 
             // pricefeed retrieval
-            info!("creating pricefeeds for {}", asset_pair);
+            info!("creating pricefeeds for {asset_pair}");
             let mut pricefeeds = vec![];
-            for feed_id in ALL_PRICE_FEEDS {
+            let feed_ids = if include_price_feeds.is_empty() {
+                ALL_PRICE_FEEDS.iter().map(|id| id.to_string()).collect()
+            } else {
+                include_price_feeds
+            };
+
+            if feed_ids.len() > 1 && feed_ids.contains(&"test".to_string()) {
+                error!("test feed cannot be used with other price feeds for {asset_pair}");
+                exit(-1);
+            }
+
+            for feed_id in feed_ids {
                 if exclude_price_feeds.contains(&feed_id.to_string()) {
-                    info!("disable `{}` pricefeed for {}", feed_id, asset_pair);
+                    info!("disable `{feed_id}` pricefeed for {asset_pair}");
                 } else {
-                    info!("enable `{}` pricefeed for {}", feed_id, asset_pair);
-                    pricefeeds.push(create_price_feed(feed_id).unwrap());
+                    info!("enable `{feed_id}` pricefeed for {asset_pair}");
+                    pricefeeds.push(create_price_feed(feed_id.as_str()).unwrap());
                 }
             }
 
-            info!("scheduling oracle events for {}", asset_pair);
+            if pricefeeds.is_empty() {
+                error!("all pricefeeds for {asset_pair} are disabled");
+                exit(-2);
+            }
+
+            info!("scheduling oracle events for {asset_pair}");
             // schedule oracle events (announcements/attestations)
             oracle_scheduler::init(
                 oracle.clone(),
@@ -342,7 +361,7 @@ async fn main() -> anyhow::Result<()> {
         .collect::<anyhow::Result<HashMap<_, _>>>()?;
 
     // setup and run server
-    info!("starting server");
+    info!("starting server at {}", &oracle_config.bind);
     HttpServer::new(move || {
         App::new()
             .app_data(web::Data::new(oracles.clone()))
@@ -353,7 +372,7 @@ async fn main() -> anyhow::Result<()> {
                     .service(config),
             )
     })
-    .bind(("127.0.0.1", 8080))?
+    .bind(oracle_config.bind)?
     .run()
     .await?;
 

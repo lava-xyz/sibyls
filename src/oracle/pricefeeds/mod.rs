@@ -8,6 +8,7 @@ pub use error::PriceFeedError;
 pub use error::Result;
 pub use gateio::GateIo;
 pub use kraken::Kraken;
+pub use test_feed::TestFeed;
 
 use crate::oracle::pricefeeds::PriceFeedError::InternalError;
 use crate::AssetPair;
@@ -30,6 +31,7 @@ pub fn create_price_feed(feed_id: &str) -> Result<Box<dyn PriceFeed + Send + Syn
         "kraken" => Ok(Box::new(Kraken {})),
         "bitfinex" => Ok(Box::new(Bitfinex {})),
         "deribit" => Ok(Box::new(Deribit {})),
+        "test" => Ok(Box::new(TestFeed {})),
         _ => Err(InternalError(format!("unknown price feed {}", feed_id))),
     }
 }
@@ -39,3 +41,4 @@ mod bitstamp;
 mod deribit;
 mod gateio;
 mod kraken;
+mod test_feed;

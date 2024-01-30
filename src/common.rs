@@ -56,6 +56,7 @@ impl From<SerializableEventDescriptor> for EventDescriptor {
 pub struct AssetPairInfo {
     pub asset_pair: AssetPair,
     pub event_descriptor: SerializableEventDescriptor,
+    pub include_price_feeds: Vec<String>,
     pub exclude_price_feeds: Vec<String>,
 }
 
@@ -134,8 +135,9 @@ pub enum AggregationType {
     Median,
 }
 
-#[derive(Copy, Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct OracleConfig {
+    pub bind: String,
     #[serde(with = "standard_time")]
     pub attestation_time: Time,
     #[serde(with = "standard_duration")]
