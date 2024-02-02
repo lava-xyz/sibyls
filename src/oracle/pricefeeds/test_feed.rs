@@ -28,8 +28,8 @@ impl PriceFeed for TestFeed {
         asset_pair: AssetPair,
         datetime: OffsetDateTime,
     ) -> crate::oracle::pricefeeds::Result<f64> {
-        let path = format!("events/test_feed");
-        fs::create_dir_all(&path).map_err(|err| {
+        let path = "events/test_feed";
+        fs::create_dir_all(path).map_err(|err| {
             error!("test_feed: cannot create feed dir {path}: {err}");
             PriceFeedError::PriceNotAvailableError(asset_pair, datetime)
         })?;
@@ -58,8 +58,8 @@ mod tests {
     use std::fs::File;
 
     use super::*;
-    use std::io::Write;
     use actix_web::dev::ResourcePath;
+    use std::io::Write;
 
     #[tokio::test]
     async fn retrieve() {

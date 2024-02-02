@@ -10,6 +10,7 @@ use sled::IVec;
 use std::process::exit;
 use std::{
     collections::HashMap,
+    env,
     fs::{self, File},
     io::Read,
     str::FromStr,
@@ -216,8 +217,7 @@ async fn config(
             .values()
             .next()
             .expect("no asset pairs recorded")
-            .oracle_config
-            .clone(),
+            .oracle_config,
     ))
 }
 
@@ -315,7 +315,7 @@ async fn main() -> anyhow::Result<()> {
 
             // create oracle
             info!("creating oracle for {}", asset_pair);
-            let oracle = Oracle::new(oracle_config.clone(), asset_pair_info, keypair)?;
+            let oracle = Oracle::new(oracle_config, asset_pair_info, keypair)?;
 
             // pricefeed retrieval
             info!("creating pricefeeds for {asset_pair}");
@@ -361,7 +361,8 @@ async fn main() -> anyhow::Result<()> {
         .collect::<anyhow::Result<HashMap<_, _>>>()?;
 
     // setup and run server
-    info!("starting server at {}", &oracle_config.bind);
+    let rpc_bind = env::var("SIBYLS_RPC_BIND").unwrap_or("127.0.0.1:8080".to_string());
+    info!("starting server at {rpc_bind}");
     HttpServer::new(move || {
         App::new()
             .app_data(web::Data::new(oracles.clone()))
@@ -372,7 +373,7 @@ async fn main() -> anyhow::Result<()> {
                     .service(config),
             )
     })
-    .bind(oracle_config.bind)?
+    .bind(rpc_bind)?
     .run()
     .await?;
 

@@ -135,9 +135,8 @@ pub enum AggregationType {
     Median,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Copy, Clone, Debug, Deserialize, Serialize)]
 pub struct OracleConfig {
-    pub bind: String,
     #[serde(with = "standard_time")]
     pub attestation_time: Time,
     #[serde(with = "standard_duration")]
