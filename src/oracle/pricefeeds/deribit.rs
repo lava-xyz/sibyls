@@ -35,11 +35,9 @@ impl PriceFeed for Deribit {
     fn translate_asset_pair(&self, asset_pair: AssetPair) -> Result<&'static str> {
         match asset_pair {
             AssetPair::BTCUSD => Ok("BTC"),
-            AssetPair::BTCUSDT => {
-                return Err(PriceFeedError::InternalError(format!(
-                    "deribit does not support USDT"
-                )))
-            }
+            AssetPair::BTCUSDT => Err(PriceFeedError::InternalError(
+                "deribit does not support USDT".to_string(),
+            )),
         }
     }
 
