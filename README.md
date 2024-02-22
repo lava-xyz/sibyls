@@ -1,8 +1,6 @@
 # sibyls
 a numeric (and extensible) oracle implementation for bitcoin. 
 
-![alt text](https://upload.wikimedia.org/wikipedia/commons/thumb/5/55/Sibyl_Domenichino.jpg/440px-Sibyl_Domenichino.jpg)
-
 ## API Description
 
 A working version of this oracle is hosted at https://oracle.lava.xyz/v1/announcements.
