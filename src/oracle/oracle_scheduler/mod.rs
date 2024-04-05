@@ -2,11 +2,13 @@ use super::{
     pricefeeds::{PriceFeed, PriceFeedError},
     DbValue, Oracle,
 };
-use crate::{AggregationType, AssetPair, AssetPairInfo, SigningVersion};
+use crate::{
+    oracle::pricefeeds::{aggregate_price, get_prices},
+    AggregationType, AssetPairInfo, SigningVersion,
+};
 use chrono::Utc;
 use clokwerk::{AsyncScheduler, Interval, Job};
 use core::ptr;
-use futures::{stream, StreamExt};
 use lightning::util::ser::Writeable;
 use log::{error, info};
 use queues::{queue, IsQueue, Queue};
@@ -113,27 +115,14 @@ impl OracleScheduler {
         price_aggregation_type: AggregationType,
     ) -> Result<()> {
         info!("retrieving pricefeeds for attestation");
-        let prices = stream::iter(self.pricefeeds.iter())
-            .then(|pricefeed| async {
-                pricefeed
-                    .retrieve_price(
-                        self.oracle.asset_pair_info.asset_pair,
-                        self.next_attestation,
-                    )
-                    .await
-                    .map_err(|err| {
-                        error!("cannot retrieve price {}", err);
-                        err
-                    })
-                    .ok()
-            })
-            .collect::<Vec<Option<f64>>>()
-            .await
-            .into_iter()
-            .flatten()
-            .collect::<Vec<f64>>();
+        let prices = get_prices(
+            &self.pricefeeds,
+            self.next_announcement,
+            self.oracle.asset_pair_info.asset_pair,
+        )
+        .await;
 
-        match aggregate(
+        match aggregate_price(
             &prices,
             price_aggregation_type,
             self.oracle.asset_pair_info.asset_pair,
@@ -144,7 +133,7 @@ impl OracleScheduler {
             Some(avg_price) => {
                 let avg_price_binary = format!(
                     "{:0width$b}",
-                    avg_price,
+                    avg_price as u64,
                     width = self.oracle.asset_pair_info.event_descriptor.num_digits as usize
                 );
                 let outcomes = avg_price_binary
@@ -171,7 +160,7 @@ impl OracleScheduler {
                     .expect("Error writing attestation");
 
                 db_value.2 = Some(attestation_bytes);
-                db_value.3 = Some(avg_price);
+                db_value.3 = Some(avg_price as u64);
                 info!(
                     "attesting with maturation {} and attestation {:#?}",
                     self.next_attestation, attestation
@@ -457,43 +446,6 @@ pub fn build_attestation(
     }
 }
 
-fn aggregate(
-    prices: &Vec<f64>,
-    aggregation_type: AggregationType,
-    asset_pair: AssetPair,
-) -> Option<u64> {
-    if prices.is_empty() {
-        None
-    } else {
-        match aggregation_type {
-            AggregationType::Average => {
-                let avg_price = prices.iter().sum::<f64>() / prices.len() as f64;
-                let avg_price = avg_price.round() as u64;
-                info!("average price of {} is {}", asset_pair, avg_price);
-                Some(avg_price)
-            }
-            AggregationType::Median => {
-                let mut sorted_prices = prices.to_vec();
-                sorted_prices.sort_by(|a, b| a.partial_cmp(b).unwrap());
-                if sorted_prices.len() % 2 == 0 {
-                    let i = sorted_prices.len() / 2 - 1;
-                    let j = sorted_prices.len() / 2;
-                    let median_price = (sorted_prices[i] + sorted_prices[j]) / 2.0;
-                    info!(
-                        "median price of {} is {} (avg of {} and {})",
-                        asset_pair, median_price, sorted_prices[i], sorted_prices[j]
-                    );
-                    Some(median_price as u64)
-                } else {
-                    let median_price = sorted_prices[sorted_prices.len() / 2];
-                    info!("median price of {} is {}", asset_pair, median_price);
-                    Some(median_price as u64)
-                }
-            }
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -541,90 +493,6 @@ mod tests {
             write!(res, "{:02x}", v).unwrap();
         }
         res
-    }
-
-    #[test]
-    fn test_aggregate() {
-        assert_eq!(
-            None,
-            aggregate(&vec![], AggregationType::Average, AssetPair::BTCUSD)
-        );
-        assert_eq!(
-            None,
-            aggregate(&vec![], AggregationType::Median, AssetPair::BTCUSD)
-        );
-        assert_eq!(
-            Some(10),
-            aggregate(&vec![10.0], AggregationType::Average, AssetPair::BTCUSD)
-        );
-        assert_eq!(
-            Some(10),
-            aggregate(&vec![10.0], AggregationType::Median, AssetPair::BTCUSD)
-        );
-        assert_eq!(
-            Some(15),
-            aggregate(
-                &vec![10.0, 20.0],
-                AggregationType::Average,
-                AssetPair::BTCUSD
-            )
-        );
-        assert_eq!(
-            Some(15),
-            aggregate(
-                &vec![10.0, 20.0],
-                AggregationType::Median,
-                AssetPair::BTCUSD
-            )
-        );
-        assert_eq!(
-            Some(20),
-            aggregate(
-                &vec![10.0, 20.0, 30.0],
-                AggregationType::Average,
-                AssetPair::BTCUSD
-            )
-        );
-        assert_eq!(
-            Some(20),
-            aggregate(
-                &vec![10.0, 30.0, 20.0],
-                AggregationType::Median,
-                AssetPair::BTCUSD
-            )
-        );
-        assert_eq!(
-            Some(35),
-            aggregate(
-                &vec![20.0, 30.0, 40.0, 50.0],
-                AggregationType::Average,
-                AssetPair::BTCUSD
-            )
-        );
-        assert_eq!(
-            Some(35),
-            aggregate(
-                &vec![40.0, 50.0, 20.0, 30.0],
-                AggregationType::Median,
-                AssetPair::BTCUSD
-            )
-        );
-        assert_eq!(
-            Some(30),
-            aggregate(
-                &vec![10.0, 20.0, 30.0, 40.0, 50.0],
-                AggregationType::Average,
-                AssetPair::BTCUSD
-            )
-        );
-        assert_eq!(
-            Some(40),
-            aggregate(
-                &vec![20.0, 40.0, 50.0, 30.0, 60.0],
-                AggregationType::Median,
-                AssetPair::BTCUSD
-            )
-        );
     }
 
     #[test]
