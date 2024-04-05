@@ -454,7 +454,6 @@ mod tests {
     use dlc_messages::ser_impls::write_as_tlv;
     use secp256k1::Scalar;
     use secp256k1_zkp::rand::{distributions::Alphanumeric, Rng};
-    use std::fmt::Write as _;
 
     fn setup() -> (KeyPair, Secp256k1<All>) {
         let secp = Secp256k1::new();
@@ -485,14 +484,6 @@ mod tests {
         }
 
         secret
-    }
-
-    pub fn hex_str(value: &[u8]) -> String {
-        let mut res = String::with_capacity(64);
-        for v in value {
-            write!(res, "{:02x}", v).unwrap();
-        }
-        res
     }
 
     #[test]

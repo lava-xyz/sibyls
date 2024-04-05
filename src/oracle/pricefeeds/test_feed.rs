@@ -58,7 +58,6 @@ mod tests {
     use std::fs::File;
 
     use super::*;
-    use actix_web::dev::ResourcePath;
     use std::io::Write;
 
     #[tokio::test]
