@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 use std::fmt::{self, Debug, Display, Formatter};
 use time::{serde::format_description, Duration, Time};
 
+use crate::oracle::pricefeeds::FeedId;
+
 #[derive(Copy, Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub enum AssetPair {
     BTCUSD,
@@ -56,8 +58,8 @@ impl From<SerializableEventDescriptor> for EventDescriptor {
 pub struct AssetPairInfo {
     pub asset_pair: AssetPair,
     pub event_descriptor: SerializableEventDescriptor,
-    pub include_price_feeds: Vec<String>,
-    pub exclude_price_feeds: Vec<String>,
+    pub include_price_feeds: Vec<FeedId>,
+    pub exclude_price_feeds: Vec<FeedId>,
 }
 
 impl Display for AssetPair {
@@ -145,4 +147,47 @@ pub struct OracleConfig {
     pub announcement_offset: Duration,
     pub signing_version: SigningVersion,
     pub price_aggregation_type: AggregationType,
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::AssetPairInfo;
+
+    #[cfg(not(feature = "test-feed"))]
+    const TEST_INFO: &str = r#"
+{
+    "asset_pair": "BTCUSD",
+    "event_descriptor": {
+        "base": 2,
+        "is_signed": false,
+        "unit": "BTCUSD",
+        "precision": 0,
+        "num_digits": 18
+    },
+    "include_price_feeds": ["Bitfinex", "Kraken"],
+    "exclude_price_feeds": ["GateIO"]
+}
+    "#;
+
+    #[cfg(feature = "test-feed")]
+    const TEST_INFO: &str = r#"
+{
+    "asset_pair": "BTCUSD",
+    "event_descriptor": {
+        "base": 2,
+        "is_signed": false,
+        "unit": "BTCUSD",
+        "precision": 0,
+        "num_digits": 18
+    },
+    "include_price_feeds": ["Test"],
+    "exclude_price_feeds": []
+}
+    "#;
+
+    #[test]
+    fn parse_config_no_error() {
+        let _: AssetPairInfo =
+            serde_json::from_str(TEST_INFO).expect("To be able to parse the configuration.");
+    }
 }

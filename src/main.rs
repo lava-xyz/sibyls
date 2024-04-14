@@ -6,6 +6,7 @@ use clap::Parser;
 use hex::ToHex;
 use secp256k1_zkp::{rand, KeyPair, Secp256k1, SecretKey};
 use serde::{Deserialize, Serialize};
+use sibyls::oracle::pricefeeds::create_price_feeds;
 use sled::IVec;
 use std::process::exit;
 use std::{
@@ -18,12 +19,12 @@ use std::{
 use time::{format_description::well_known::Rfc3339, Duration, OffsetDateTime};
 
 use sibyls::{
-    oracle::{
-        oracle_scheduler, pricefeeds::create_price_feed, pricefeeds::ALL_PRICE_FEEDS, DbValue,
-        Oracle,
-    },
+    oracle::{oracle_scheduler, DbValue, Oracle},
     AssetPair, AssetPairInfo, OracleConfig,
 };
+
+#[cfg(not(feature = "test-feed"))]
+use sibyls::oracle::pricefeeds::ALL_PRICE_FEEDS;
 
 mod error;
 use error::SibylsError;
@@ -319,31 +320,26 @@ async fn main() -> anyhow::Result<()> {
 
             // pricefeed retrieval
             info!("creating pricefeeds for {asset_pair}");
-            let mut pricefeeds = vec![];
-            let feed_ids = if include_price_feeds.is_empty() {
-                ALL_PRICE_FEEDS.iter().map(|id| id.to_string()).collect()
+            let mut feed_ids = if include_price_feeds.is_empty() {
+                #[cfg(not(feature = "test-feed"))]
+                let ret = ALL_PRICE_FEEDS.to_vec();
+                #[cfg(feature = "test-feed")]
+                let ret = vec![sibyls::oracle::pricefeeds::FeedId::Test];
+                ret
             } else {
                 include_price_feeds
             };
 
-            if feed_ids.len() > 1 && feed_ids.contains(&"test".to_string()) {
-                error!("test feed cannot be used with other price feeds for {asset_pair}");
-                exit(-1);
-            }
+            feed_ids.retain(|x| !exclude_price_feeds.contains(x));
 
-            for feed_id in feed_ids {
-                if exclude_price_feeds.contains(&feed_id.to_string()) {
-                    info!("disable `{feed_id}` pricefeed for {asset_pair}");
-                } else {
-                    info!("enable `{feed_id}` pricefeed for {asset_pair}");
-                    pricefeeds.push(create_price_feed(feed_id.as_str()).unwrap());
-                }
-            }
-
-            if pricefeeds.is_empty() {
+            if feed_ids.is_empty() {
                 error!("all pricefeeds for {asset_pair} are disabled");
                 exit(-2);
             }
+
+            info!("Using following price feeds: {feed_ids:?}");
+
+            let pricefeeds = create_price_feeds(&feed_ids);
 
             info!("scheduling oracle events for {asset_pair}");
             // schedule oracle events (announcements/attestations)

@@ -52,8 +52,9 @@ impl PriceFeed for Bitfinex {
     }
 }
 
+#[cfg(test)]
 mod tests {
-    use crate::AssetPair::*;
+    use crate::AssetPair::BTCUSD;
 
     use super::*;
 
