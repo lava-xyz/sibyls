@@ -71,7 +71,15 @@ impl PriceFeed for Bitstamp {
             )));
         }
 
-        let price = res.data.unwrap().ohlc[0].open.parse().unwrap();
+        let price = res
+            .data
+            .unwrap()
+            .ohlc
+            .get(0)
+            .ok_or(PriceFeedError::PriceNotAvailableError(asset_pair, instant))?
+            .open
+            .parse()
+            .unwrap();
         info!("bitstamp price {price}");
         Ok(price)
     }
