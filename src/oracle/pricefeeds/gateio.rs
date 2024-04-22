@@ -45,7 +45,15 @@ impl PriceFeed for GateIo {
             return Err(PriceFeedError::PriceNotAvailableError(asset_pair, instant));
         }
 
-        let price = res[0][5].as_str().unwrap().parse().unwrap();
+        let price = res
+            .get(0)
+            .ok_or(PriceFeedError::PriceNotAvailableError(asset_pair, instant))?
+            .get(5)
+            .ok_or(PriceFeedError::PriceNotAvailableError(asset_pair, instant))?
+            .as_str()
+            .unwrap()
+            .parse()
+            .unwrap();
         info!("gateio price {price}");
         Ok(price)
     }

@@ -61,7 +61,15 @@ impl PriceFeed for Kraken {
             .get(asset_pair_translation)
             .ok_or(PriceFeedError::PriceNotAvailableError(asset_pair, instant))?;
 
-        let price = res[0][1].as_str().unwrap().parse().unwrap();
+        let price = res
+            .get(0)
+            .ok_or(PriceFeedError::PriceNotAvailableError(asset_pair, instant))?
+            .get(1)
+            .ok_or(PriceFeedError::PriceNotAvailableError(asset_pair, instant))?
+            .as_str()
+            .unwrap()
+            .parse()
+            .unwrap();
         info!("kraken price {price}");
         Ok(price)
     }

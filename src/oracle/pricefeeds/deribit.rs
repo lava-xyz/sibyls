@@ -72,7 +72,11 @@ impl PriceFeed for Deribit {
             .result
             .ok_or(PriceFeedError::PriceNotAvailableError(asset_pair, instant))?;
 
-        let index_price = res.settlements[0].index_price;
+        let index_price = res
+            .settlements
+            .get(0)
+            .ok_or(PriceFeedError::PriceNotAvailableError(asset_pair, instant))?
+            .index_price;
         info!("deribit price {index_price}");
         Ok(index_price)
     }
@@ -84,7 +88,7 @@ mod tests {
     use time::OffsetDateTime;
 
     #[tokio::test]
-    async fn test_retrieve_price() {
+    async fn retrieve() {
         let deribit = Deribit {};
         let now = OffsetDateTime::now_utc();
         let result = deribit.retrieve_price(AssetPair::BTCUSD, now).await;

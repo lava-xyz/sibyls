@@ -46,7 +46,14 @@ impl PriceFeed for Bitfinex {
         }
 
         debug!("received bitfinex response: {:#?}", res);
-        let price = res[0][3].to_string().parse().unwrap();
+        let price = res
+            .get(0)
+            .ok_or(PriceFeedError::PriceNotAvailableError(asset_pair, instant))?
+            .get(3)
+            .ok_or(PriceFeedError::PriceNotAvailableError(asset_pair, instant))?
+            .to_string()
+            .parse()
+            .unwrap();
         info!("bitfinex price: {price}");
         Ok(price)
     }
