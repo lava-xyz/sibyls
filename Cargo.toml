@@ -9,11 +9,11 @@ edition = "2021"
 test-feed = []
 
 [dependencies]
-actix-web = "4.0.1"
+actix-web = "4.5.1"     # had to upgrade b/c they removed stdsimd feature (ahash dependency)
 anyhow = "1.0.57"
 async-trait = "0.1.53"
 chrono = "0.4"
-clap = { version = "3.2.5", features = ["derive"] }
+clap = { version = "4.5.4", features = ["derive", "env", "string"] }
 clokwerk = "0.4.0-rc1"
 displaydoc = "0.2"
 dlc-messages = "~0.4.0"
@@ -25,6 +25,7 @@ humantime = "2.1.0"
 log = "0.4.17"
 parking_lot = "0.12.0"
 queues = "1.1.0"
+rand = "0.8.0"
 reqwest = { version = "0.11.10", features = ["json"] }
 secp256k1-zkp = { version = "0.7.0", features = ["bitcoin_hashes", "rand-std"] }
 secp256k1 = "0.24.3" # used by secp256k1-zkp

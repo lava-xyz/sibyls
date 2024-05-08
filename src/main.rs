@@ -2,8 +2,9 @@
 extern crate log;
 
 use actix_web::{get, web, App, HttpResponse, HttpServer};
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use hex::ToHex;
+use rand::rngs::OsRng;
 use secp256k1_zkp::{rand, KeyPair, Secp256k1, SecretKey};
 use serde::{Deserialize, Serialize};
 use sibyls::oracle::pricefeeds::create_price_feeds;
@@ -12,8 +13,9 @@ use std::process::exit;
 use std::{
     collections::HashMap,
     env,
-    fs::{self, File},
+    fs::File,
     io::Read,
+    path::PathBuf,
     str::FromStr,
 };
 use time::{format_description::well_known::Rfc3339, Duration, OffsetDateTime};
@@ -222,20 +224,50 @@ async fn config(
     ))
 }
 
+fn get_default_oracle_config_path() -> PathBuf {
+    let mut path = env::current_exe().unwrap();
+    path.pop(); // remove the exe name
+    path.pop(); // remove the debug/release directory
+    path.pop(); // remove the target directory
+    path.push("config");
+    path.push("oracle.json");
+    path}
+
+fn get_default_asset_pair_config_path() -> PathBuf {
+    let mut path = env::current_exe().unwrap();
+    path.pop(); // remove the exe name
+    path.pop(); // remove the debug/release directory
+    path.pop(); // remove the target directory
+    path.push("config");
+    path.push("asset_pair.json");
+    path
+}
+
 #[derive(Parser)]
 /// Simple DLC oracle implementation
 struct Args {
-    /// Optional private key file; if not provided, one is generated
-    #[clap(short, long, parse(from_os_str), value_name = "FILE", value_hint = clap::ValueHint::FilePath)]
-    secret_key_file: Option<std::path::PathBuf>,
+    #[command(subcommand)]
+    command: Commands,
+}
 
-    /// Optional asset pair config file; if not provided, it is assumed to exist at "config/asset_pair.json"
-    #[clap(short, long, parse(from_os_str), value_name = "FILE", value_hint = clap::ValueHint::FilePath)]
-    asset_pair_config_file: Option<std::path::PathBuf>,
-
-    /// Optional oracle config file; if not provided, it is assumed to exist at "config/oracle.json"
-    #[clap(short, long, parse(from_os_str), value_name = "FILE", value_hint = clap::ValueHint::FilePath)]
-    oracle_config_file: Option<std::path::PathBuf>,
+#[derive(Debug, Subcommand)]
+enum Commands {
+    /// Serves the API
+    #[command(arg_required_else_help = true)]
+    Serve {
+        /// Secret key
+        #[clap(short, long, env, value_name = "SECRET_KEY")]
+        secret_key: String, // SECRET_KEY environment variable 
+        /// The asset pair config file
+        #[clap(short, long, value_name = "FILE", value_hint = clap::ValueHint::FilePath)]
+        #[arg(default_value= get_default_asset_pair_config_path().into_os_string())]
+        asset_pair_config_file: PathBuf,
+        /// The oracle config file
+        #[clap(short, long, value_name = "FILE", value_hint = clap::ValueHint::FilePath)]
+        #[arg(default_value= get_default_oracle_config_path().into_os_string())]
+        oracle_config_file: PathBuf,
+    },
+    GenerateKey,
 }
 
 #[actix_web::main]
@@ -244,134 +276,109 @@ async fn main() -> anyhow::Result<()> {
 
     let args = Args::parse();
 
-    let mut secret_key = String::new();
-    let secp = Secp256k1::new();
-
-    let secret_key = match args.secret_key_file {
-        None => {
-            info!("no secret key file was found, generating secret key");
-            secp.generate_keypair(&mut rand::thread_rng()).0
-        }
-        Some(path) => {
+    match args.command {
+        Commands::Serve { asset_pair_config_file, oracle_config_file, secret_key } => {
+            let secp = Secp256k1::new();
+            let keypair = KeyPair::from_secret_key(&secp, &SecretKey::from_str(&secret_key).unwrap());
             info!(
-                "reading secret key from {}",
-                path.as_os_str().to_string_lossy()
+                "oracle keypair successfully generated, pubkey is {}",
+                keypair.public_key().serialize().encode_hex::<String>()
             );
-            File::open(path)?.read_to_string(&mut secret_key)?;
-            secret_key.retain(|c| !c.is_whitespace());
-            SecretKey::from_str(&secret_key)?
+
+            // read asset pair config from file
+            info!("reading asset pair config from {}", asset_pair_config_file.as_os_str().to_string_lossy());
+            let mut asset_pair_config_str = String::new();
+            File::open(asset_pair_config_file)?.read_to_string(&mut asset_pair_config_str)?;
+            let asset_pair_infos: Vec<AssetPairInfo> = serde_json::from_str(&asset_pair_config_str)?;
+            info!("asset pair config successfully read: {:#?}", asset_pair_infos);
+        
+            // read oracle config from file
+            info!("reading oracle config from {}", oracle_config_file.as_os_str().to_string_lossy());
+            let mut oracle_config_str = String::new();
+            File::open(oracle_config_file)?.read_to_string(&mut oracle_config_str)?;
+            let oracle_config: OracleConfig = serde_json::from_str(&oracle_config_str)?;
+            info!("oracle config successfully read: {:#?}", oracle_config);
+        
+            // setup event databases
+            let oracles = asset_pair_infos
+                .iter()
+                .map(|asset_pair_info| asset_pair_info.asset_pair)
+                .zip(asset_pair_infos.iter().cloned().map(|asset_pair_info| {
+                    let asset_pair = asset_pair_info.asset_pair;
+                    let include_price_feeds = asset_pair_info.include_price_feeds.clone();
+                    let exclude_price_feeds = asset_pair_info.exclude_price_feeds.clone();
+        
+                    // create oracle
+                    info!("creating oracle for {}", asset_pair);
+                    let oracle = Oracle::new(oracle_config, asset_pair_info, keypair)?;
+        
+                    // pricefeed retrieval
+                    info!("creating pricefeeds for {asset_pair}");
+                    let mut feed_ids = if include_price_feeds.is_empty() {
+                        #[cfg(not(feature = "test-feed"))]
+                        let ret = ALL_PRICE_FEEDS.to_vec();
+                        #[cfg(feature = "test-feed")]
+                        let ret = vec![sibyls::oracle::pricefeeds::FeedId::Test];
+                        ret
+                    } else {
+                        include_price_feeds
+                    };
+        
+                    feed_ids.retain(|x| !exclude_price_feeds.contains(x));
+        
+                    if feed_ids.is_empty() {
+                        error!("all pricefeeds for {asset_pair} are disabled");
+                        exit(-2);
+                    }
+        
+                    info!("Using following price feeds: {feed_ids:?}");
+        
+                    let pricefeeds = create_price_feeds(&feed_ids);
+        
+                    info!("scheduling oracle events for {asset_pair}");
+                    // schedule oracle events (announcements/attestations)
+                    oracle_scheduler::init(
+                        oracle.clone(),
+                        secp.clone(),
+                        pricefeeds,
+                        oracle_config.signing_version,
+                        oracle_config.price_aggregation_type,
+                    )?;
+        
+                    Ok(oracle)
+                }))
+                .map(|(asset_pair, oracle)| oracle.map(|ok| (asset_pair, ok)))
+                .collect::<anyhow::Result<HashMap<_, _>>>()?;
+        
+            // setup and run server
+            let rpc_bind = env::var("SIBYLS_RPC_BIND").unwrap_or("127.0.0.1:8080".to_string());
+            info!("starting server at {rpc_bind}");
+            HttpServer::new(move || {
+                App::new()
+                    .app_data(web::Data::new(oracles.clone()))
+                    .service(
+                        web::scope("/v1")
+                            .service(announcements)
+                            .service(announcement)
+                            .service(config),
+                    )
+            })
+            .bind(rpc_bind)?
+            .run()
+            .await?;
+        
         }
-    };
-    let keypair = KeyPair::from_secret_key(&secp, &secret_key);
-    info!(
-        "oracle keypair successfully generated, pubkey is {}",
-        keypair.public_key().serialize().encode_hex::<String>()
-    );
+        Commands::GenerateKey => {
+            let secp = Secp256k1::new();
+            let (secret_key, public_key) = secp.generate_keypair(&mut OsRng);
 
-    let asset_pair_infos: Vec<AssetPairInfo> = match args.asset_pair_config_file {
-        None => {
-            info!("reading asset pair config from config/asset_pair.json");
-            serde_json::from_str(&fs::read_to_string("config/asset_pair.json")?)?
+            let secret_key_hex = hex::encode(secret_key.as_ref());
+            let public_key_hex = hex::encode(public_key.serialize());
+
+            println!("Secret Key: {}", secret_key_hex);
+            println!("Public Key: {}", public_key_hex);
         }
-        Some(path) => {
-            info!(
-                "reading asset pair config from {}",
-                path.as_os_str().to_string_lossy()
-            );
-            let mut asset_pair_info = String::new();
-            File::open(path)?.read_to_string(&mut asset_pair_info)?;
-            serde_json::from_str(&asset_pair_info)?
-        }
-    };
-    info!(
-        "asset pair config successfully read: {:#?}",
-        asset_pair_infos
-    );
-
-    let oracle_config: OracleConfig = match args.oracle_config_file {
-        None => {
-            info!("reading oracle config from config/oracle.json");
-            serde_json::from_str(&fs::read_to_string("config/oracle.json")?)?
-        }
-        Some(path) => {
-            info!(
-                "reading oracle config from {}",
-                path.as_os_str().to_string_lossy()
-            );
-            let mut oracle_config = String::new();
-            File::open(path)?.read_to_string(&mut oracle_config)?;
-            serde_json::from_str(&oracle_config)?
-        }
-    };
-    info!("oracle config successfully read: {:#?}", oracle_config);
-
-    // setup event databases
-    let oracles = asset_pair_infos
-        .iter()
-        .map(|asset_pair_info| asset_pair_info.asset_pair)
-        .zip(asset_pair_infos.iter().cloned().map(|asset_pair_info| {
-            let asset_pair = asset_pair_info.asset_pair;
-            let include_price_feeds = asset_pair_info.include_price_feeds.clone();
-            let exclude_price_feeds = asset_pair_info.exclude_price_feeds.clone();
-
-            // create oracle
-            info!("creating oracle for {}", asset_pair);
-            let oracle = Oracle::new(oracle_config, asset_pair_info, keypair)?;
-
-            // pricefeed retrieval
-            info!("creating pricefeeds for {asset_pair}");
-            let mut feed_ids = if include_price_feeds.is_empty() {
-                #[cfg(not(feature = "test-feed"))]
-                let ret = ALL_PRICE_FEEDS.to_vec();
-                #[cfg(feature = "test-feed")]
-                let ret = vec![sibyls::oracle::pricefeeds::FeedId::Test];
-                ret
-            } else {
-                include_price_feeds
-            };
-
-            feed_ids.retain(|x| !exclude_price_feeds.contains(x));
-
-            if feed_ids.is_empty() {
-                error!("all pricefeeds for {asset_pair} are disabled");
-                exit(-2);
-            }
-
-            info!("Using following price feeds: {feed_ids:?}");
-
-            let pricefeeds = create_price_feeds(&feed_ids);
-
-            info!("scheduling oracle events for {asset_pair}");
-            // schedule oracle events (announcements/attestations)
-            oracle_scheduler::init(
-                oracle.clone(),
-                secp.clone(),
-                pricefeeds,
-                oracle_config.signing_version,
-                oracle_config.price_aggregation_type,
-            )?;
-
-            Ok(oracle)
-        }))
-        .map(|(asset_pair, oracle)| oracle.map(|ok| (asset_pair, ok)))
-        .collect::<anyhow::Result<HashMap<_, _>>>()?;
-
-    // setup and run server
-    let rpc_bind = env::var("SIBYLS_RPC_BIND").unwrap_or("127.0.0.1:8080".to_string());
-    info!("starting server at {rpc_bind}");
-    HttpServer::new(move || {
-        App::new()
-            .app_data(web::Data::new(oracles.clone()))
-            .service(
-                web::scope("/v1")
-                    .service(announcements)
-                    .service(announcement)
-                    .service(config),
-            )
-    })
-    .bind(rpc_bind)?
-    .run()
-    .await?;
-
+    }
+    
     Ok(())
 }
