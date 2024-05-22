@@ -4,9 +4,6 @@ on:
   push:
     branches:
       - master 
-  pull_request:
-    branches:
-      - master  
 
 jobs:
   build:
@@ -30,6 +27,3 @@ jobs:
         with:
           push: true
           tags: ${{ secrets.DOCKERHUB_USERNAME}}/sibyls:latest
-
-      - name: Image digest
-        run: echo ${{ steps.build-and-push.outputs.digest }}
