@@ -267,6 +267,7 @@ enum Commands {
         #[arg(default_value= get_default_oracle_config_path().into_os_string())]
         oracle_config_file: PathBuf,
     },
+    /// Generates a new keypair
     GenerateKey,
 }
 
@@ -351,7 +352,7 @@ async fn main() -> anyhow::Result<()> {
                 .collect::<anyhow::Result<HashMap<_, _>>>()?;
         
             // setup and run server
-            let rpc_bind = env::var("SIBYLS_RPC_BIND").unwrap_or("127.0.0.1:8080".to_string());
+            let rpc_bind = env::var("SIBYLS_RPC_BIND").unwrap_or("0.0.0.0:8080".to_string());
             info!("starting server at {rpc_bind}");
             HttpServer::new(move || {
                 App::new()
