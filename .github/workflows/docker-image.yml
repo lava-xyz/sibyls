@@ -22,8 +22,17 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      # Step to get the short SHA of the commit
+      - name: Get the commit hash
+        id: vars
+        run: echo "::set-output name=sha::$(git rev-parse --short HEAD)"
+
+      # Publish the image under 'latest' as well as the commit hash
       - name: Build and Push Docker image
         uses: docker/build-push-action@v5
         with:
           push: true
-          tags: ${{ secrets.DOCKERHUB_USERNAME}}/sibyls:latest
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME}}/sibyls:latest
+            ${{ secrets.DOCKERHUB_USERNAME}}/sibyls:${{ steps.vars.outputs.sha }}
+
