@@ -1,0 +1,12 @@
+[package]
+name = "sibyls-keygen"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+clap = { version = "4.0", features = ["derive", "string", "env"] }
+hex = "0.4"
+rand = "0.8"
+secp256k1 = { version = "0.29", features = ["rand"] }
+log = "0.4"
+env_logger = "0.9"
