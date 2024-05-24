@@ -116,19 +116,12 @@ git clone https://github.com/lava-xyz/sibyls.git
 cargo build --release
 ```
 
+If you don't already have a key, generate one with [sibyls-keygen](https://github.com/lava-xyz/sibyls/tree/main/sibyls-keygen).
+
 Then, you can run by executing:
-
 ```sh
-./target/release/sibyls
+./target/release/sibyls --key config/keystore
 ```
-
-To specify a file to read the secret key from, execute:
-
-```sh
-./target/release/sibyls -s <FILE>
-```
-
-One is generated if not provided.
 
 To specify a file to read asset pair configs from (more on this in [Asset Pairs](#asset-pairs)), execute:
 
