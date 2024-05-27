@@ -99,7 +99,7 @@ fn inspect_key(secp: &Secp256k1<secp256k1::All>, key: &str) -> Result<String, io
         key.to_string()
     };
 
-    let secret_key_bytes = hex::decode(&secret_key_hex)
+    let secret_key_bytes = hex::decode(secret_key_hex)
         .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "Invalid hex string"))?;
     let secret_key = SecretKey::from_slice(&secret_key_bytes)
         .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "Invalid secret key"))?;
