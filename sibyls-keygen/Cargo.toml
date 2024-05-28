@@ -2,6 +2,7 @@
 name = "sibyls-keygen"
 version = "0.1.0"
 edition = "2021"
+include = ["src/main.rs", "README.md"]
 
 [dependencies]
 clap = { version = "4.0", features = ["derive", "string", "env"] }
