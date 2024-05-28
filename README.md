@@ -177,7 +177,7 @@ The program defaults are located in `config/oracle.json`.
 
 ## Extend
 
-This oracle implementation is extensible to using other pricefeeds, asset pairs, and (to come) event descriptors (for more information, see https://github.com/discreetlogcontracts/dlcspecs/blob/master/Oracle.md#event-descriptor) rather than just {Bitstamp, Kraken, Gate.io}, BTCUSD, and digit decomposition.
+This oracle implementation is extensible to using other pricefeeds, asset pairs, and (to come) event descriptors (for more information, see https://github.com/discreetlogcontracts/dlcspecs/blob/master/Oracle.md#event-descriptor) rather than just BTC price feeds and digit decomposition.
 
 ### Pricefeeds
 
