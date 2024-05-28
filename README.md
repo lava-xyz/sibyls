@@ -266,6 +266,6 @@ impl PriceFeed for Kraken {
 }
 ```
 
-### Run Sibyls
+## Run Sibyls
 
 If you are running Sibyls, or want to run Sibyls and need help, please email hello (at) lava (dot) xyz to let us know.
