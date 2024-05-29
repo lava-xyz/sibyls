@@ -3,3 +3,5 @@ members = [
     "sibyls",
     "sibyls-keygen",
 ]
+
+resolver = "2"

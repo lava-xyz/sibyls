@@ -1822,7 +1822,6 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "env_logger",
- "hex",
  "log",
  "secp256k1 0.29.0",
 ]
