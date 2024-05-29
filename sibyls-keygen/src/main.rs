@@ -68,10 +68,10 @@ fn generate_keypair(
     overwrite: bool,
 ) -> Result<(String, String), io::Error> {
     let secret_key = SecretKey::new(&mut rand::thread_rng());
-    let secret_key_hex = hex::encode(secret_key.as_ref());
+    let secret_key_hex = format!("{}", secret_key.display_secret());
 
     let public_key = PublicKey::from_secret_key(secp, &secret_key);
-    let public_key_hex = hex::encode(public_key.serialize());
+    let public_key_hex = public_key.to_string();
 
     if let Some(path) = output_file {
         if path.exists() && !overwrite {
@@ -103,7 +103,7 @@ fn inspect_key(secp: &Secp256k1<secp256k1::All>, key: &str) -> Result<String, io
     let secret_key = SecretKey::from_str(&secret_key_hex)
         .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "Invalid secret key"))?;
     let public_key = PublicKey::from_secret_key(secp, &secret_key);
-    let public_key_hex = hex::encode(public_key.serialize());
+    let public_key_hex = public_key.to_string();
 
     Ok(public_key_hex)
 }
