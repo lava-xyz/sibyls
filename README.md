@@ -264,14 +264,15 @@ impl PriceFeed for Kraken {
 If you are running Sibyls, or want to run Sibyls and need help, please email hello (at) lava (dot) xyz to let us know.
 
 # TODO
+The following todos are in decreasing priority.
+## Persistence
+Currently, the Sybils database is on instance only. It should also support using an external database such as Postgres.
 ## Key Handling
 Additional functionality can be added to make working with the key easier. 
 ### Encryption at Rest
 Encrypt the keystore on disk with a password. When Sibyls starts, require the password to decrypt the keystore. 
 ### Key Injection via POST
 Create a POST endpoint to inject a key into a running instance of Sibyls. This allows for the scenario where the sysadmin is separate from the key owner. The sysadmin is responsible for setting up Sibyls and the key owner is responsible for maintaining the key and running the `curl` command when Sibyls is up and running.
-## Persistence
-Currently, the Sybils database is on instance only. It should also support using an external database such as Postgres.
 ## Additional Data Feeds
 Currently, there are several data feeds supported out of the box. Additional feeds may be useful and added to `src/oracle/pricefeeds`.
 ## Separate Attestation Signing from Hosting
