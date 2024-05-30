@@ -4,18 +4,12 @@ extern crate log;
 use actix_web::{get, web, App, HttpResponse, HttpServer};
 use clap::Parser;
 use hex::ToHex;
-use secp256k1_zkp::{rand, KeyPair, Secp256k1, SecretKey};
+use secp256k1_zkp::{KeyPair, Secp256k1, SecretKey};
 use serde::{Deserialize, Serialize};
 use sibyls::oracle::pricefeeds::create_price_feeds;
 use sled::IVec;
 use std::process::exit;
-use std::{
-    collections::HashMap,
-    env,
-    fs::{self, File},
-    io::Read,
-    str::FromStr,
-};
+use std::{collections::HashMap, env, fs::File, io::Read, path::PathBuf, str::FromStr};
 use time::{format_description::well_known::Rfc3339, Duration, OffsetDateTime};
 
 use sibyls::{
@@ -222,20 +216,43 @@ async fn config(
     ))
 }
 
+fn get_default_oracle_config_path() -> PathBuf {
+    let mut path = env::current_dir().unwrap();
+    path.push("config");
+    path.push("oracle.json");
+    path
+}
+
+fn get_default_asset_pair_config_path() -> PathBuf {
+    let mut path = env::current_dir().unwrap();
+    path.push("config");
+    path.push("asset_pair.json");
+    path
+}
+
+fn get_default_keystore_path() -> PathBuf {
+    let mut path = env::current_dir().unwrap();
+    path.push("config");
+    path.push("keystore");
+    path
+}
+
 #[derive(Parser)]
+#[clap(author, version, about)]
 /// Simple DLC oracle implementation
 struct Args {
-    /// Optional private key file; if not provided, one is generated
-    #[clap(short, long, parse(from_os_str), value_name = "FILE", value_hint = clap::ValueHint::FilePath)]
-    secret_key_file: Option<std::path::PathBuf>,
-
-    /// Optional asset pair config file; if not provided, it is assumed to exist at "config/asset_pair.json"
-    #[clap(short, long, parse(from_os_str), value_name = "FILE", value_hint = clap::ValueHint::FilePath)]
-    asset_pair_config_file: Option<std::path::PathBuf>,
-
-    /// Optional oracle config file; if not provided, it is assumed to exist at "config/oracle.json"
-    #[clap(short, long, parse(from_os_str), value_name = "FILE", value_hint = clap::ValueHint::FilePath)]
-    oracle_config_file: Option<std::path::PathBuf>,
+    /// Secret key (can be a string or a file path)
+    #[clap(short, long, env, value_name = "KEY")]
+    #[arg(default_value= get_default_keystore_path().into_os_string())]
+    key: String, // KEY environment variable
+    /// The asset pair config file
+    #[clap(short, long, value_name = "FILE", value_hint = clap::ValueHint::FilePath)]
+    #[arg(default_value= get_default_asset_pair_config_path().into_os_string())]
+    asset_pair_config_file: PathBuf,
+    /// The oracle config file
+    #[clap(short, long, value_name = "FILE", value_hint = clap::ValueHint::FilePath)]
+    #[arg(default_value= get_default_oracle_config_path().into_os_string())]
+    oracle_config_file: PathBuf,
 }
 
 #[actix_web::main]
@@ -244,65 +261,44 @@ async fn main() -> anyhow::Result<()> {
 
     let args = Args::parse();
 
-    let mut secret_key = String::new();
-    let secp = Secp256k1::new();
-
-    let secret_key = match args.secret_key_file {
-        None => {
-            info!("no secret key file was found, generating secret key");
-            secp.generate_keypair(&mut rand::thread_rng()).0
-        }
-        Some(path) => {
-            info!(
-                "reading secret key from {}",
-                path.as_os_str().to_string_lossy()
-            );
-            File::open(path)?.read_to_string(&mut secret_key)?;
-            secret_key.retain(|c| !c.is_whitespace());
-            SecretKey::from_str(&secret_key)?
-        }
+    // Read the secret key, either directly or from a file
+    let secret_key_found = if PathBuf::from(&args.key).exists() {
+        let mut secret_key_str = String::new();
+        File::open(args.key)?.read_to_string(&mut secret_key_str)?;
+        secret_key_str.trim().to_string()
+    } else {
+        args.key
     };
-    let keypair = KeyPair::from_secret_key(&secp, &secret_key);
+
+    let secp = Secp256k1::new();
+    let keypair: KeyPair =
+        KeyPair::from_secret_key(&secp, &SecretKey::from_str(&secret_key_found).unwrap());
     info!(
         "oracle keypair successfully generated, pubkey is {}",
         keypair.public_key().serialize().encode_hex::<String>()
     );
 
-    let asset_pair_infos: Vec<AssetPairInfo> = match args.asset_pair_config_file {
-        None => {
-            info!("reading asset pair config from config/asset_pair.json");
-            serde_json::from_str(&fs::read_to_string("config/asset_pair.json")?)?
-        }
-        Some(path) => {
-            info!(
-                "reading asset pair config from {}",
-                path.as_os_str().to_string_lossy()
-            );
-            let mut asset_pair_info = String::new();
-            File::open(path)?.read_to_string(&mut asset_pair_info)?;
-            serde_json::from_str(&asset_pair_info)?
-        }
-    };
+    // read asset pair config from file
+    info!(
+        "reading asset pair config from {}",
+        args.asset_pair_config_file.as_os_str().to_string_lossy()
+    );
+    let mut asset_pair_config_str = String::new();
+    File::open(args.asset_pair_config_file)?.read_to_string(&mut asset_pair_config_str)?;
+    let asset_pair_infos: Vec<AssetPairInfo> = serde_json::from_str(&asset_pair_config_str)?;
     info!(
         "asset pair config successfully read: {:#?}",
         asset_pair_infos
     );
 
-    let oracle_config: OracleConfig = match args.oracle_config_file {
-        None => {
-            info!("reading oracle config from config/oracle.json");
-            serde_json::from_str(&fs::read_to_string("config/oracle.json")?)?
-        }
-        Some(path) => {
-            info!(
-                "reading oracle config from {}",
-                path.as_os_str().to_string_lossy()
-            );
-            let mut oracle_config = String::new();
-            File::open(path)?.read_to_string(&mut oracle_config)?;
-            serde_json::from_str(&oracle_config)?
-        }
-    };
+    // read oracle config from file
+    info!(
+        "reading oracle config from {}",
+        args.oracle_config_file.as_os_str().to_string_lossy()
+    );
+    let mut oracle_config_str = String::new();
+    File::open(args.oracle_config_file)?.read_to_string(&mut oracle_config_str)?;
+    let oracle_config: OracleConfig = serde_json::from_str(&oracle_config_str)?;
     info!("oracle config successfully read: {:#?}", oracle_config);
 
     // setup event databases
@@ -357,7 +353,7 @@ async fn main() -> anyhow::Result<()> {
         .collect::<anyhow::Result<HashMap<_, _>>>()?;
 
     // setup and run server
-    let rpc_bind = env::var("SIBYLS_RPC_BIND").unwrap_or("127.0.0.1:8080".to_string());
+    let rpc_bind = env::var("SIBYLS_RPC_BIND").unwrap_or("0.0.0.0:8080".to_string());
     info!("starting server at {rpc_bind}");
     HttpServer::new(move || {
         App::new()

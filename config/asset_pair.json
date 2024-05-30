@@ -8,7 +8,7 @@
             "precision": 0,
             "num_digits": 18
         },
-        "include_price_feeds": [],
+        "include_price_feeds": ["Kraken"],
         "exclude_price_feeds": []
     }
 ]

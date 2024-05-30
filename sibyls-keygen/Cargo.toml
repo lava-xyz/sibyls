@@ -1,0 +1,11 @@
+[package]
+name = "sibyls-keygen"
+version = "0.1.0"
+edition = "2021"
+include = ["src/main.rs", "README.md"]
+
+[dependencies]
+clap = { version = "4.0", features = ["derive", "string", "env"] }
+secp256k1 = { version = "0.29", features = ["rand-std"] }
+log = "0.4"
+env_logger = "0.9"

@@ -116,19 +116,12 @@ git clone https://github.com/lava-xyz/sibyls.git
 cargo build --release
 ```
 
+If you don't already have a key, generate one with [sibyls-keygen](https://github.com/lava-xyz/sibyls/tree/main/sibyls-keygen).
+
 Then, you can run by executing:
-
 ```sh
-./target/release/sibyls
+./target/release/sibyls --key config/keystore
 ```
-
-To specify a file to read the secret key from, execute:
-
-```sh
-./target/release/sibyls -s <FILE>
-```
-
-One is generated if not provided.
 
 To specify a file to read asset pair configs from (more on this in [Asset Pairs](#asset-pairs)), execute:
 
@@ -269,3 +262,19 @@ impl PriceFeed for Kraken {
 ## Run Sibyls
 
 If you are running Sibyls, or want to run Sibyls and need help, please email hello (at) lava (dot) xyz to let us know.
+
+# TODO
+## Key Handling
+Additional functionality can be added to make working with the key easier. 
+### Encryption at Rest
+Encrypt the keystore on disk with a password. When Sibyls starts, require the password to decrypt the keystore. 
+### Key Injection via POST
+Create a POST endpoint to inject a key into a running instance of Sibyls. This allows for the scenario where the sysadmin is separate from the key owner. The sysadmin is responsible for setting up Sibyls and the key owner is responsible for maintaining the key and running the `curl` command when Sibyls is up and running.
+## Persistence
+Currently, the Sybils database is on instance only. It should also support using an external database such as Postgres.
+## Additional Data Feeds
+Currently, there are several data feeds supported out of the box. Additional feeds may be useful and added to `src/oracle/pricefeeds`.
+## Separate Attestation Signing from Hosting
+The current implementation hosts both attestation signing and hosting in the same instance. It may be more secure to have them separated so that the signing can occur on a more secure instance that has write access to the database. The hosting instance could be more open/public.
+## Documentation and Testing
+More documentation and testing is welcome.
