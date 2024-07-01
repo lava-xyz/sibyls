@@ -1,8 +1,10 @@
 use dlc_messages::oracle_msgs::EventDescriptor::{DigitDecompositionEvent, EnumEvent};
-use dlc_messages::oracle_msgs::{DigitDecompositionEventDescriptor, EventDescriptor};
+use dlc_messages::oracle_msgs::{
+    DigitDecompositionEventDescriptor, EventDescriptor, OracleAnnouncement, OracleAttestation,
+};
 use serde::{Deserialize, Serialize};
 use std::fmt::{self, Debug, Display, Formatter};
-use time::{serde::format_description, Duration, Time};
+use time::{serde::format_description, Duration, OffsetDateTime, Time};
 
 use crate::oracle::pricefeeds::FeedId;
 
@@ -65,6 +67,43 @@ pub struct AssetPairInfo {
 impl Display for AssetPair {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         Debug::fmt(self, f)
+    }
+}
+
+#[derive(PartialEq, Debug)]
+pub struct OracleEvent {
+    pub asset_pair: AssetPair,
+    pub maturation: OffsetDateTime,
+    pub(crate) outstanding_sk_nonces: Vec<[u8; 32]>,
+    pub announcement: OracleAnnouncement,
+    pub attestation: Option<OracleAttestation>,
+    pub outcome: Option<u64>,
+}
+
+pub const PAGE_SIZE: u32 = 100;
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SortOrder {
+    Insertion,
+    ReverseInsertion,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct Filters {
+    pub sort_by: SortOrder,
+    pub page: u32,
+    pub asset_pair: AssetPair,
+}
+
+impl Default for Filters {
+    fn default() -> Self {
+        Filters {
+            sort_by: SortOrder::ReverseInsertion,
+            page: 0,
+            asset_pair: AssetPair::BTCUSD,
+        }
     }
 }
 

@@ -3,52 +3,28 @@ extern crate log;
 
 use actix_web::{get, web, App, HttpResponse, HttpServer};
 use clap::Parser;
+use dlc_messages::ser_impls::write_as_tlv;
 use hex::ToHex;
 use secp256k1_zkp::{KeyPair, Secp256k1, SecretKey};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use sibyls::oracle::pricefeeds::create_price_feeds;
-use sled::IVec;
 use std::process::exit;
 use std::{collections::HashMap, env, fs::File, io::Read, path::PathBuf, str::FromStr};
-use time::{format_description::well_known::Rfc3339, Duration, OffsetDateTime};
+use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
 use sibyls::{
-    oracle::{oracle_scheduler, DbValue, Oracle},
+    oracle::{oracle_scheduler, Oracle},
     AssetPair, AssetPairInfo, OracleConfig,
 };
+
+use sibyls::common::*;
+use sibyls::db::EventStorage;
 
 #[cfg(not(feature = "test-feed"))]
 use sibyls::oracle::pricefeeds::ALL_PRICE_FEEDS;
 
 mod error;
 use error::SibylsError;
-
-const PAGE_SIZE: u32 = 100;
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-enum SortOrder {
-    Insertion,
-    ReverseInsertion,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(default, rename_all = "camelCase")]
-struct Filters {
-    sort_by: SortOrder,
-    page: u32,
-    asset_pair: AssetPair,
-}
-
-impl Default for Filters {
-    fn default() -> Self {
-        Filters {
-            sort_by: SortOrder::ReverseInsertion,
-            page: 0,
-            asset_pair: AssetPair::BTCUSD,
-        }
-    }
-}
 
 #[derive(Serialize)]
 struct ApiOracleEvent {
@@ -59,18 +35,26 @@ struct ApiOracleEvent {
     outcome: Option<u64>,
 }
 
-fn parse_database_entry(
-    asset_pair: AssetPair,
-    (maturation, event): (IVec, IVec),
-) -> ApiOracleEvent {
-    let maturation = String::from_utf8_lossy(&maturation).to_string();
-    let event: DbValue = serde_json::from_str(&String::from_utf8_lossy(&event)).unwrap();
-    ApiOracleEvent {
-        asset_pair,
-        announcement: event.1.encode_hex::<String>(),
-        attestation: event.2.map(|att| att.encode_hex::<String>()),
-        maturation,
-        outcome: event.3,
+impl From<&OracleEvent> for ApiOracleEvent {
+    fn from(value: &OracleEvent) -> Self {
+        let mut announcement_bytes = Vec::new();
+        write_as_tlv(&value.announcement, &mut announcement_bytes)
+            .expect("Error writing announcement");
+        let announcement_hex = announcement_bytes.encode_hex::<String>();
+
+        let attestation_hex = value.attestation.clone().map(|att| {
+            let mut attestation_bytes = Vec::new();
+            write_as_tlv(&att, &mut attestation_bytes).expect("Error writing attestation");
+            attestation_bytes.encode_hex::<String>()
+        });
+
+        ApiOracleEvent {
+            asset_pair: value.asset_pair,
+            announcement: announcement_hex,
+            attestation: attestation_hex,
+            maturation: value.maturation.format(&Rfc3339).unwrap(),
+            outcome: value.outcome,
+        }
     }
 }
 
@@ -85,87 +69,12 @@ async fn announcements(
         Some(val) => val,
     };
 
-    if oracle.event_database.is_empty() {
-        info!("no oracle events found");
-        return Ok(HttpResponse::Ok().json(Vec::<ApiOracleEvent>::new()));
-    }
-
-    let start = filters.page * PAGE_SIZE;
-
-    match filters.sort_by {
-        SortOrder::Insertion => loop {
-            let init_key = oracle
-                .event_database
-                .first()
-                .map_err(SibylsError::DatabaseError)?
-                .unwrap()
-                .0;
-            let start_key = OffsetDateTime::parse(&String::from_utf8_lossy(&init_key), &Rfc3339)
-                .unwrap()
-                + Duration::days(start.into());
-            let end_key = start_key + Duration::days(PAGE_SIZE.into());
-            let start_key = start_key.format(&Rfc3339).unwrap().into_bytes();
-            let end_key = end_key.format(&Rfc3339).unwrap().into_bytes();
-            if init_key
-                == oracle
-                    .event_database
-                    .first()
-                    .map_err(SibylsError::DatabaseError)?
-                    .unwrap()
-                    .0
-            {
-                // don't know if range can change while iterating due to another thread modifying
-                info!(
-                    "retrieving oracle events from {} to {}",
-                    String::from_utf8_lossy(&start_key),
-                    String::from_utf8_lossy(&end_key),
-                );
-                return Ok(HttpResponse::Ok().json(
-                    oracle
-                        .event_database
-                        .range(start_key..end_key)
-                        .map(|result| parse_database_entry(filters.asset_pair, result.unwrap()))
-                        .collect::<Vec<_>>(),
-                ));
-            }
-        },
-        SortOrder::ReverseInsertion => loop {
-            let init_key = oracle
-                .event_database
-                .last()
-                .map_err(SibylsError::DatabaseError)?
-                .unwrap()
-                .0;
-            let end_key = OffsetDateTime::parse(&String::from_utf8_lossy(&init_key), &Rfc3339)
-                .unwrap()
-                - Duration::days(start.into());
-            let start_key = end_key - Duration::days(PAGE_SIZE.into());
-            let start_key = start_key.format(&Rfc3339).unwrap().into_bytes();
-            let end_key = end_key.format(&Rfc3339).unwrap().into_bytes();
-            if init_key
-                == oracle
-                    .event_database
-                    .last()
-                    .map_err(SibylsError::DatabaseError)?
-                    .unwrap()
-                    .0
-            {
-                // don't know if range can change while iterating due to another thread modifying
-                info!(
-                    "retrieving oracle events from {} to {}",
-                    String::from_utf8_lossy(&start_key),
-                    String::from_utf8_lossy(&end_key),
-                );
-                return Ok(HttpResponse::Ok().json(
-                    oracle
-                        .event_database
-                        .range(start_key..end_key)
-                        .map(|result| parse_database_entry(filters.asset_pair, result.unwrap()))
-                        .collect::<Vec<_>>(),
-                ));
-            }
-        },
-    }
+    let events = oracle.event_database.list_oracle_events(filters.0)?;
+    let events = events
+        .iter()
+        .map(|e| e.into())
+        .collect::<Vec<ApiOracleEvent>>();
+    Ok(HttpResponse::Ok().json(events))
 }
 
 #[get("/announcement/{rfc3339_time}")]
@@ -175,31 +84,22 @@ async fn announcement(
     path: web::Path<String>,
 ) -> actix_web::Result<HttpResponse, actix_web::Error> {
     info!("GET /announcement/{}: {:#?}", path, filters);
-    let _ = OffsetDateTime::parse(&path, &Rfc3339).map_err(SibylsError::DatetimeParseError)?;
+    let maturation =
+        OffsetDateTime::parse(&path, &Rfc3339).map_err(SibylsError::DatetimeParseError)?;
 
     let oracle = match oracles.get(&filters.asset_pair) {
         None => return Err(SibylsError::UnrecordedAssetPairError(filters.asset_pair).into()),
         Some(val) => val,
     };
 
-    if oracle.event_database.is_empty() {
-        info!("no oracle events found");
-        return Err(SibylsError::OracleEventNotFoundError(path.to_string()).into());
-    }
-
     info!("retrieving oracle event with maturation {}", path);
-    let event = match oracle
+
+    let event = oracle
         .event_database
-        .get(path.as_bytes())
-        .map_err(SibylsError::DatabaseError)?
-    {
-        Some(val) => val,
-        None => return Err(SibylsError::OracleEventNotFoundError(path.to_string()).into()),
-    };
-    Ok(HttpResponse::Ok().json(parse_database_entry(
-        filters.asset_pair,
-        ((&**path).into(), event),
-    )))
+        .get_oracle_event(&maturation, filters.asset_pair)?;
+    let event = Into::<ApiOracleEvent>::into(&event);
+
+    Ok(HttpResponse::Ok().json(event))
 }
 
 #[get("/config")]

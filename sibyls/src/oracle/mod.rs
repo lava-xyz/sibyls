@@ -1,27 +1,23 @@
-use crate::{AssetPairInfo, OracleConfig};
+use crate::{AssetPair, AssetPairInfo, OracleConfig};
 use log::info;
 use secp256k1_zkp::KeyPair;
-use serde::{Deserialize, Serialize};
-use sled::Db;
 
 mod error;
 pub use error::OracleError;
 pub use error::Result;
 
-#[derive(Clone, Deserialize, Serialize)]
-// outstanding_sk_nonces?, announcement, attetstation?, outcome?
-pub struct DbValue(
-    pub Option<Vec<[u8; 32]>>,
-    pub Vec<u8>,
-    pub Option<Vec<u8>>,
-    pub Option<u64>,
-);
+#[derive(Clone)]
+pub struct EventData {
+    pub maturation: OffsetDateTime,
+    pub asset_pair: AssetPair,
+    pub outstanding_sk_nonces: Vec<[u8; 32]>,
+}
 
 #[derive(Clone)]
 pub struct Oracle {
     pub oracle_config: OracleConfig,
     asset_pair_info: AssetPairInfo,
-    pub event_database: Db,
+    pub event_database: SledEventStorage,
     keypair: KeyPair,
 }
 
@@ -40,7 +36,7 @@ impl Oracle {
         // setup event database
         let path = format!("events/{}", asset_pair_info.asset_pair);
         info!("creating sled at {}", path);
-        let event_database = sled::open(path)?;
+        let event_database = SledEventStorage::new(sled::open(path)?);
 
         Ok(Oracle {
             oracle_config,
@@ -51,7 +47,9 @@ impl Oracle {
     }
 }
 
+use crate::db::SledEventStorage;
 pub use dlc_messages::oracle_msgs::EventDescriptor;
+use time::OffsetDateTime;
 
 pub mod oracle_scheduler;
 pub mod pricefeeds;
