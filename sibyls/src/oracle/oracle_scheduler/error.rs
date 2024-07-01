@@ -19,4 +19,7 @@ pub enum OracleSchedulerError {
 
     /// pricefeed error: {0}
     PriceFeedError(#[from] crate::oracle::pricefeeds::PriceFeedError),
+
+    /// internal error: {0}
+    InternalError(String),
 }

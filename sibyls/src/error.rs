@@ -1,11 +1,12 @@
+use crate::AssetPair;
 use displaydoc::Display;
 use thiserror::Error;
 
 #[allow(clippy::enum_variant_names)]
-#[derive(Debug, Display, Error)]
+#[derive(Debug, Display, Error, PartialEq)]
 pub enum SibylsError {
     /// asset pair {0} not recorded
-    UnrecordedAssetPairError(sibyls::AssetPair),
+    UnrecordedAssetPairError(AssetPair),
 
     /// datetime RFC3339 parsing error: {0}
     DatetimeParseError(#[from] time::error::Parse),
@@ -14,7 +15,10 @@ pub enum SibylsError {
     OracleEventNotFoundError(String),
 
     /// database error: {0}
-    DatabaseError(#[from] sled::Error),
+    SledDatabaseError(#[from] sled::Error),
+
+    /// {0}
+    InternalError(String),
 }
 
 impl actix_web::error::ResponseError for SibylsError {
