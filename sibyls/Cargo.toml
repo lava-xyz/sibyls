@@ -36,6 +36,7 @@ sled = "0.34"
 thiserror = "1.0.31"
 time = { version = "0.3.9", features = ["formatting", "serde-human-readable"] }
 tokio = { version = "1.18.2", features = ["full"] }
+diesel = { version = "2.2.0", features = ["postgres", "serde_json", "time", "r2d2"] }
 
 [dev-dependencies]
 dlc = "~0.4.0"

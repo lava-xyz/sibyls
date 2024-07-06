@@ -1,4 +1,5 @@
 use crate::AssetPair;
+use diesel;
 use displaydoc::Display;
 use thiserror::Error;
 
@@ -8,6 +9,9 @@ pub enum SibylsError {
     /// asset pair {0} not recorded
     UnrecordedAssetPairError(AssetPair),
 
+    /// unknown asset pair {0}
+    UnknownAssetPairError(String),
+
     /// datetime RFC3339 parsing error: {0}
     DatetimeParseError(#[from] time::error::Parse),
 
@@ -16,6 +20,15 @@ pub enum SibylsError {
 
     /// database error: {0}
     SledDatabaseError(#[from] sled::Error),
+
+    /// database connection error: {0}
+    PgDatabaseConnectionError(#[from] diesel::ConnectionError),
+
+    /// database error: {0}
+    PgDatabaseError(#[from] diesel::result::Error),
+
+    /// database pool error: {0}
+    PgDatabasePoolError(String),
 
     /// {0}
     InternalError(String),

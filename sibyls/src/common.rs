@@ -1,9 +1,11 @@
+use crate::error::SibylsError;
 use dlc_messages::oracle_msgs::EventDescriptor::{DigitDecompositionEvent, EnumEvent};
 use dlc_messages::oracle_msgs::{
     DigitDecompositionEventDescriptor, EventDescriptor, OracleAnnouncement, OracleAttestation,
 };
 use serde::{Deserialize, Serialize};
 use std::fmt::{self, Debug, Display, Formatter};
+use std::str::FromStr;
 use time::{serde::format_description, Duration, OffsetDateTime, Time};
 
 use crate::oracle::pricefeeds::FeedId;
@@ -12,6 +14,20 @@ use crate::oracle::pricefeeds::FeedId;
 pub enum AssetPair {
     BTCUSD,
     BTCUSDT,
+}
+
+impl FromStr for AssetPair {
+    type Err = SibylsError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s == "BTCUSD" {
+            Ok(AssetPair::BTCUSD)
+        } else if s == "BTCUSDT" {
+            Ok(AssetPair::BTCUSDT)
+        } else {
+            Err(SibylsError::UnknownAssetPairError(s.to_string()))
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize)]
