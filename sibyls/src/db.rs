@@ -18,30 +18,83 @@ use crate::error::SibylsError;
 use crate::Filters;
 use crate::{AssetPair, OracleEvent, SortOrder, PAGE_SIZE};
 
-pub trait EventStorage {
-    fn get_oracle_event(
+#[derive(Debug, Clone)]
+pub enum EventStorage {
+    Sled(SledEventStorage),
+    Pg(PgEventStorage),
+}
+
+impl EventStorage {
+    pub fn new(database_url: &String, asset_pair: AssetPair) -> Result<EventStorage, SibylsError> {
+        match database_url.split(":").collect::<Vec<&str>>().first() {
+            Some(scheme) => {
+                if scheme == &"sled" {
+                    Ok(EventStorage::Sled(SledEventStorage::new(asset_pair)?))
+                } else if scheme == &"postgres" {
+                    Ok(EventStorage::Pg(PgEventStorage::new(database_url)?))
+                } else {
+                    Err(SibylsError::InternalError(format!(
+                        "unknown database scheme: {database_url}"
+                    )))
+                }
+            }
+            None => Err(SibylsError::InternalError(format!(
+                "invalid database URL: {database_url}"
+            ))),
+        }
+    }
+
+    pub fn get_oracle_event(
         &self,
         maturation: &OffsetDateTime,
         asset_pair: AssetPair,
-    ) -> Result<OracleEvent, SibylsError>;
+    ) -> Result<OracleEvent, SibylsError> {
+        match self {
+            EventStorage::Sled(storage) => storage.get_oracle_event(maturation, asset_pair),
+            EventStorage::Pg(storage) => storage.get_oracle_event(maturation, asset_pair),
+        }
+    }
 
-    fn list_oracle_events(&self, filters: Filters) -> Result<Vec<OracleEvent>, SibylsError>;
+    pub fn list_oracle_events(&self, filters: Filters) -> Result<Vec<OracleEvent>, SibylsError> {
+        match self {
+            EventStorage::Sled(storage) => storage.list_oracle_events(filters),
+            EventStorage::Pg(storage) => storage.list_oracle_events(filters),
+        }
+    }
 
-    fn store_announcement(
+    pub fn store_announcement(
         &self,
         maturation: &OffsetDateTime,
         asset_pair: AssetPair,
         ann: &OracleAnnouncement,
         outstanding_sk_nonces: &Vec<[u8; 32]>,
-    ) -> Result<(), SibylsError>;
+    ) -> Result<(), SibylsError> {
+        match self {
+            EventStorage::Sled(storage) => {
+                storage.store_announcement(maturation, asset_pair, ann, outstanding_sk_nonces)
+            }
+            EventStorage::Pg(storage) => {
+                storage.store_announcement(maturation, asset_pair, ann, outstanding_sk_nonces)
+            }
+        }
+    }
 
-    fn store_attestation(
+    pub fn store_attestation(
         &self,
         maturation: &OffsetDateTime,
         asset_pair: AssetPair,
         att: &OracleAttestation,
         price: u64,
-    ) -> Result<(), SibylsError>;
+    ) -> Result<(), SibylsError> {
+        match self {
+            EventStorage::Sled(storage) => {
+                storage.store_attestation(maturation, asset_pair, att, price)
+            }
+            EventStorage::Pg(storage) => {
+                storage.store_attestation(maturation, asset_pair, att, price)
+            }
+        }
+    }
 }
 
 #[derive(Queryable, Selectable)]
@@ -109,6 +162,7 @@ impl EventDTO {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct PgEventStorage {
     pool: Pool<ConnectionManager<PgConnection>>,
 }
@@ -121,9 +175,7 @@ impl PgEventStorage {
         })?;
         Ok(Self { pool })
     }
-}
 
-impl EventStorage for PgEventStorage {
     fn get_oracle_event(
         &self,
         maturation: &OffsetDateTime,
@@ -293,14 +345,17 @@ struct DbValue(
     pub Option<u64>,
 );
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct SledEventStorage {
     event_database: Db,
 }
 
 impl SledEventStorage {
-    pub fn new(event_database: Db) -> Self {
-        SledEventStorage { event_database }
+    pub fn new(asset_pair: AssetPair) -> Result<Self, SibylsError> {
+        let path = format!("events/{}", asset_pair);
+        info!("creating sled at {}", path);
+        let event_database = sled::open(path)?;
+        Ok(SledEventStorage { event_database })
     }
 
     fn parse_database_entry(
@@ -325,9 +380,7 @@ impl SledEventStorage {
             outstanding_sk_nonces: event.0.unwrap(),
         }
     }
-}
 
-impl EventStorage for SledEventStorage {
     fn get_oracle_event(
         &self,
         maturation: &OffsetDateTime,
@@ -530,7 +583,7 @@ mod tests {
     use time::format_description::well_known::Rfc3339;
     use time::{Duration, OffsetDateTime};
 
-    use crate::db::{EventStorage, PgEventStorage, SledEventStorage};
+    use crate::db::{PgEventStorage, SledEventStorage};
     use crate::error::SibylsError;
     use crate::{
         build_announcement, build_attestation, AssetPair, AssetPairInfo, Filters,

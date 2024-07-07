@@ -1,5 +1,4 @@
 use crate::{AssetPair, AssetPairInfo, OracleConfig};
-use log::info;
 use secp256k1_zkp::KeyPair;
 
 mod error;
@@ -17,7 +16,7 @@ pub struct EventData {
 pub struct Oracle {
     pub oracle_config: OracleConfig,
     asset_pair_info: AssetPairInfo,
-    pub event_database: SledEventStorage,
+    pub event_database: EventStorage,
     keypair: KeyPair,
 }
 
@@ -26,6 +25,7 @@ impl Oracle {
         oracle_config: OracleConfig,
         asset_pair_info: AssetPairInfo,
         keypair: KeyPair,
+        database_url: &String,
     ) -> Result<Oracle> {
         if !oracle_config.announcement_offset.is_positive() {
             return Err(OracleError::InvalidAnnouncementTimeError(
@@ -33,10 +33,7 @@ impl Oracle {
             ));
         }
 
-        // setup event database
-        let path = format!("events/{}", asset_pair_info.asset_pair);
-        info!("creating sled at {}", path);
-        let event_database = SledEventStorage::new(sled::open(path)?);
+        let event_database = EventStorage::new(database_url, asset_pair_info.asset_pair)?;
 
         Ok(Oracle {
             oracle_config,
@@ -47,7 +44,7 @@ impl Oracle {
     }
 }
 
-use crate::db::SledEventStorage;
+use crate::db::EventStorage;
 pub use dlc_messages::oracle_msgs::EventDescriptor;
 use time::OffsetDateTime;
 

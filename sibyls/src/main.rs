@@ -18,7 +18,6 @@ use sibyls::{
 };
 
 use sibyls::common::*;
-use sibyls::db::EventStorage;
 
 #[cfg(not(feature = "test-feed"))]
 use sibyls::oracle::pricefeeds::ALL_PRICE_FEEDS;
@@ -153,6 +152,10 @@ struct Args {
     #[clap(short, long, value_name = "FILE", value_hint = clap::ValueHint::FilePath)]
     #[arg(default_value= get_default_oracle_config_path().into_os_string())]
     oracle_config_file: PathBuf,
+    /// The oracle config file
+    #[clap(short, long, env, value_name = "DATABASE_URL")]
+    #[arg(default_value = "sled")]
+    database_url: String,
 }
 
 #[actix_web::main]
@@ -212,7 +215,9 @@ async fn main() -> anyhow::Result<()> {
 
             // create oracle
             info!("creating oracle for {}", asset_pair);
-            let oracle = Oracle::new(oracle_config, asset_pair_info, keypair)?;
+            // setup event database
+
+            let oracle = Oracle::new(oracle_config, asset_pair_info, keypair, &args.database_url)?;
 
             // pricefeed retrieval
             info!("creating pricefeeds for {asset_pair}");

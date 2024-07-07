@@ -34,7 +34,6 @@ mod error;
 pub use error::OracleSchedulerError;
 pub use error::Result;
 
-use crate::db::EventStorage;
 use crate::error::SibylsError;
 use dlc_messages::oracle_msgs::{OracleAnnouncement, OracleAttestation, OracleEvent};
 use dlc_messages::ser_impls::write_as_tlv;
@@ -482,7 +481,6 @@ pub fn build_attestation(
 mod tests {
     use super::*;
     use crate::{AssetPair, SerializableEventDescriptor};
-    use dlc::OracleInfo;
     use dlc_messages::ser_impls::write_as_tlv;
     use secp256k1::Scalar;
     use secp256k1_zkp::rand::{distributions::Alphanumeric, Rng};
