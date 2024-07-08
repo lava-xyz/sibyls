@@ -223,14 +223,14 @@ impl PgEventStorage {
                 .select(EventDTO::as_select())
                 .order(maturation.asc())
                 .limit(PAGE_SIZE as i64)
-                .offset(filters.page as i64)
+                .offset((filters.page * PAGE_SIZE) as i64)
                 .load(&mut conn)?,
             SortOrder::ReverseInsertion => events
                 .filter(asset_pair.eq(filters.asset_pair.to_string()))
                 .select(EventDTO::as_select())
                 .order(maturation.desc())
                 .limit(PAGE_SIZE as i64)
-                .offset(filters.page as i64)
+                .offset((filters.page * PAGE_SIZE) as i64)
                 .load(&mut conn)?,
         };
 
@@ -608,7 +608,7 @@ mod tests {
     fn setup_pg() -> (KeyPair, Secp256k1<All>, PgEventStorage) {
         use crate::schema::events::dsl::events;
         use std::env;
-        let database_url = env::var("PG_DATABASE_URL").expect("PG_DATABASE_URL is not set");
+        let database_url = env::var("TEST_DATABASE_URL").expect("TEST_DATABASE_URL is not set");
         let mut connection = PgConnection::establish(&database_url).unwrap();
         let _ = diesel::delete(events)
             .execute(&mut connection)
@@ -751,7 +751,7 @@ mod tests {
     // To run this test you first need to
     // 1. Create a database
     // 2. Run this command to create the tables: diesel migration run
-    // 3. Run this command to run the test: PG_DATABASE_URL=postgres://user:password@database_host/database_name cargo test -- --include-ignored
+    // 3. Run this command to run the test: TEST_DATABASE_URL=postgres://user:password@database_host/database_name cargo test -- --include-ignored
     #[test]
     #[ignore]
     fn pg_happy_path() {
