@@ -14,7 +14,4 @@ pub enum OracleError {
 
     /// {0}
     SibylsError(#[from] SibylsError),
-
-    /// {0}
-    Error(String),
 }
