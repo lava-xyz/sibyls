@@ -277,5 +277,5 @@ Create a POST endpoint to inject a key into a running instance of Sibyls. This a
 Currently, there are several data feeds supported out of the box. Additional feeds may be useful and added to `src/oracle/pricefeeds`.
 ## Separate Attestation Signing from Hosting
 The current implementation hosts both attestation signing and hosting in the same instance. It may be more secure to have them separated so that the signing can occur on a more secure instance that has write access to the database. The hosting instance could be more open/public.
-## Documentation and Testing
-More documentation and testing is welcome.
+## Better Documentation, Testing, and Logging
+Suggestions to documentation, testing, and logging are welcome.
