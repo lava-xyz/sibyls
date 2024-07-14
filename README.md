@@ -1,5 +1,5 @@
 # sibyls
-a numeric (and extensible) oracle implementation for bitcoin. 
+oracle implementation for bitcoin.
 
 ## API Description
 
