@@ -170,7 +170,7 @@ The program defaults are located in `config/oracle.json`.
 
 ## Extend
 
-This oracle implementation is extensible to using other pricefeeds, asset pairs, and event descriptors (https://github.com/discreetlogcontracts/dlcspecs/blob/master/Oracle.md#event-descriptor) rather than just BTC price feeds and digit decomposition.
+This oracle implementation is extensible to using other pricefeeds, asset pairs, and [event descriptors](https://github.com/discreetlogcontracts/dlcspecs/blob/master/Oracle.md#event-descriptor) rather than just BTC price feeds and digit decomposition.
 
 ### Pricefeeds
 
