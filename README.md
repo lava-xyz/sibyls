@@ -261,7 +261,7 @@ impl PriceFeed for Kraken {
 
 ## Run Sibyls
 
-If you are running Sibyls, or want to run Sibyls and need help, please email hello (at) lava (dot) xyz to let us know.
+If you are running Sibyls, or want to run Sibyls and need help, please email us. You can find our contact info at lava.xyz. 
 
 # TODO
 The following todos are in decreasing priority.
