@@ -6,6 +6,7 @@ use dlc_messages::oracle_msgs::{
 use serde::{Deserialize, Serialize};
 use std::fmt::{self, Debug, Display, Formatter};
 use std::str::FromStr;
+use clap::ValueEnum;
 use time::{serde::format_description, Duration, OffsetDateTime, Time};
 
 use crate::oracle::pricefeeds::FeedId;
@@ -28,6 +29,12 @@ impl FromStr for AssetPair {
             Err(SibylsError::UnknownAssetPairError(s.to_string()))
         }
     }
+}
+
+#[derive(Debug, Clone, ValueEnum)]
+pub enum DatabaseBackend {
+    Sled,
+    Pg,
 }
 
 #[derive(Clone, Debug, Deserialize)]

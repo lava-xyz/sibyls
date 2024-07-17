@@ -1,4 +1,4 @@
-use crate::{AssetPair, AssetPairInfo, OracleConfig};
+use crate::{AssetPair, AssetPairInfo, DatabaseBackend, OracleConfig};
 use secp256k1_zkp::KeyPair;
 
 mod error;
@@ -25,15 +25,19 @@ impl Oracle {
         oracle_config: OracleConfig,
         asset_pair_info: AssetPairInfo,
         keypair: KeyPair,
-        database_url: &String,
+        database_url: &Option<String>,
+        database_backend: &DatabaseBackend,
     ) -> Result<Oracle> {
         if !oracle_config.announcement_offset.is_positive() {
             return Err(OracleError::InvalidAnnouncementTimeError(
                 oracle_config.announcement_offset,
             ));
         }
-
-        let event_database = EventStorage::new(database_url, asset_pair_info.asset_pair)?;
+        match database_backend{
+            DatabaseBackend::Sled => {}
+            DatabaseBackend::Pg => {}
+        }
+        let event_database = EventStorage::new(database_url, database_backend, asset_pair_info.asset_pair)?;
 
         Ok(Oracle {
             oracle_config,

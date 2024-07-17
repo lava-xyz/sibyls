@@ -153,9 +153,12 @@ struct Args {
     #[arg(default_value= get_default_oracle_config_path().into_os_string())]
     oracle_config_file: PathBuf,
     /// The oracle config file
-    #[clap(short, long, env, value_name = "DATABASE_URL")]
+    #[clap(long, env, value_name = "DATABASE_URL")]
+    database_url: Option<String>,
+    /// The database type (sled/postgres)
+    #[clap(long)]
     #[arg(default_value = "sled")]
-    database_url: String,
+    database_backend: DatabaseBackend,
 }
 
 #[actix_web::main]
@@ -217,7 +220,7 @@ async fn main() -> anyhow::Result<()> {
             info!("creating oracle for {}", asset_pair);
             // setup event database
 
-            let oracle = Oracle::new(oracle_config, asset_pair_info, keypair, &args.database_url)?;
+            let oracle = Oracle::new(oracle_config, asset_pair_info, keypair, &args.database_url, &args.database_backend)?;
 
             // pricefeed retrieval
             info!("creating pricefeeds for {asset_pair}");

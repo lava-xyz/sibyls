@@ -1,7 +1,7 @@
 use crate::db::postgres::PgEventStorage;
 use crate::db::sled::SledEventStorage;
 use crate::error::SibylsError;
-use crate::{AssetPair, Filters, OracleEvent};
+use crate::{AssetPair, DatabaseBackend, Filters, OracleEvent};
 use dlc_messages::oracle_msgs::{OracleAnnouncement, OracleAttestation};
 use time::OffsetDateTime;
 
@@ -15,22 +15,18 @@ pub enum EventStorage {
 }
 
 impl EventStorage {
-    pub fn new(database_url: &String, asset_pair: AssetPair) -> Result<EventStorage, SibylsError> {
-        match database_url.split(":").collect::<Vec<&str>>().first() {
-            Some(scheme) => {
-                if scheme == &"sled" {
-                    Ok(EventStorage::Sled(SledEventStorage::new(asset_pair)?))
-                } else if scheme == &"postgres" {
-                    Ok(EventStorage::Pg(PgEventStorage::new(database_url)?))
+    pub fn new(database_url: &Option<String>, database_backend: &DatabaseBackend, asset_pair: AssetPair) -> Result<EventStorage, SibylsError> {
+        match database_backend{
+            DatabaseBackend::Sled => {
+                Ok(EventStorage::Sled(SledEventStorage::new(asset_pair)?))
+            }
+            DatabaseBackend::Pg => {
+                if let Some(url) = database_url {
+                    Ok(EventStorage::Pg(PgEventStorage::new(url)?))
                 } else {
-                    Err(SibylsError::InternalError(format!(
-                        "unknown database scheme: {database_url}"
-                    )))
+                    Err(SibylsError::InternalError("The database URL is not set. Use --database-url command line option or DATABASE_URL environment variable to set it".to_string()))
                 }
             }
-            None => Err(SibylsError::InternalError(format!(
-                "invalid database URL: {database_url}"
-            ))),
         }
     }
 
