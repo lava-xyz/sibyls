@@ -19,19 +19,26 @@ pub enum SibylsError {
     OracleEventNotFoundError(String),
 
     /// database error: {0}
+    DatabaseError(#[from] DbError),
+
+    /// {0}
+    InternalError(String),
+}
+
+#[allow(clippy::enum_variant_names)]
+#[derive(Debug, Display, Error, PartialEq)]
+pub enum DbError {
+    /// {0}
     SledDatabaseError(#[from] sled::Error),
 
-    /// database connection error: {0}
+    /// connection error: {0}
     PgDatabaseConnectionError(#[from] diesel::ConnectionError),
 
-    /// database error: {0}
+    /// {0}
     PgDatabaseError(#[from] diesel::result::Error),
 
     /// database pool error: {0}
     PgDatabasePoolError(String),
-
-    /// {0}
-    InternalError(String),
 }
 
 impl actix_web::error::ResponseError for SibylsError {

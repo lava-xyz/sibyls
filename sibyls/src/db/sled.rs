@@ -1,3 +1,4 @@
+use crate::error::DbError::SledDatabaseError;
 use crate::error::SibylsError;
 use crate::{AssetPair, Filters, OracleEvent, SortOrder, PAGE_SIZE};
 use dlc_messages::oracle_msgs::{EventDescriptor, OracleAnnouncement, OracleAttestation};
@@ -26,7 +27,7 @@ impl SledEventStorage {
     pub fn new(asset_pair: AssetPair) -> Result<Self, SibylsError> {
         let path = format!("events/{}", asset_pair);
         info!("creating sled at {}", path);
-        let event_database = sled::open(path)?;
+        let event_database = sled::open(path).map_err(|e| SledDatabaseError(e))?;
         Ok(SledEventStorage { event_database })
     }
 
@@ -62,7 +63,7 @@ impl SledEventStorage {
         match self
             .event_database
             .get(id.to_owned().into_bytes())
-            .map_err(SibylsError::SledDatabaseError)?
+            .map_err(|e| SledDatabaseError(e))?
         {
             Some(event) => Ok(crate::db::SledEventStorage::parse_database_entry(
                 asset_pair,
@@ -87,7 +88,7 @@ impl SledEventStorage {
                 let init_key = self
                     .event_database
                     .first()
-                    .map_err(SibylsError::SledDatabaseError)?
+                    .map_err(|e| SledDatabaseError(e))?
                     .unwrap()
                     .0;
                 let start_key =
@@ -100,7 +101,7 @@ impl SledEventStorage {
                     == self
                         .event_database
                         .first()
-                        .map_err(SibylsError::SledDatabaseError)?
+                        .map_err(|e| SledDatabaseError(e))?
                         .unwrap()
                         .0
                 {
@@ -126,7 +127,7 @@ impl SledEventStorage {
                 let init_key = self
                     .event_database
                     .last()
-                    .map_err(SibylsError::SledDatabaseError)?
+                    .map_err(|e| SledDatabaseError(e))?
                     .unwrap()
                     .0;
                 let end_key =
@@ -139,7 +140,7 @@ impl SledEventStorage {
                     == self
                         .event_database
                         .last()
-                        .map_err(SibylsError::SledDatabaseError)?
+                        .map_err(|e| SledDatabaseError(e))?
                         .unwrap()
                         .0
                 {
@@ -210,7 +211,7 @@ impl SledEventStorage {
             serde_json::to_string(&db_value).unwrap().into_bytes(),
         ) {
             Ok(_) => Ok(()),
-            Err(err) => Err(SibylsError::SledDatabaseError(err)),
+            Err(err) => Err(SibylsError::from(SledDatabaseError(err))),
         }
     }
 
@@ -225,7 +226,7 @@ impl SledEventStorage {
         match self
             .event_database
             .get(id.to_owned().into_bytes())
-            .map_err(SibylsError::SledDatabaseError)?
+            .map_err(|e| SledDatabaseError(e))?
         {
             Some(event) => {
                 let mut db_value: DbValue =
@@ -240,7 +241,7 @@ impl SledEventStorage {
                     serde_json::to_string(&db_value).unwrap().into_bytes(),
                 ) {
                     Ok(_) => Ok(()),
-                    Err(err) => Err(SibylsError::SledDatabaseError(err)),
+                    Err(err) => Err(SibylsError::from(SledDatabaseError(err))),
                 }
             }
             None => return Err(SibylsError::OracleEventNotFoundError(id.to_string()).into()),

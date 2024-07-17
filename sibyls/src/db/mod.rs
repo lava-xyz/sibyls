@@ -15,11 +15,13 @@ pub enum EventStorage {
 }
 
 impl EventStorage {
-    pub fn new(database_url: &Option<String>, database_backend: &DatabaseBackend, asset_pair: AssetPair) -> Result<EventStorage, SibylsError> {
-        match database_backend{
-            DatabaseBackend::Sled => {
-                Ok(EventStorage::Sled(SledEventStorage::new(asset_pair)?))
-            }
+    pub fn new(
+        database_url: &Option<String>,
+        database_backend: &DatabaseBackend,
+        asset_pair: AssetPair,
+    ) -> Result<EventStorage, SibylsError> {
+        match database_backend {
+            DatabaseBackend::Sled => Ok(EventStorage::Sled(SledEventStorage::new(asset_pair)?)),
             DatabaseBackend::Pg => {
                 if let Some(url) = database_url {
                     Ok(EventStorage::Pg(PgEventStorage::new(url)?))

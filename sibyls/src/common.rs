@@ -1,4 +1,5 @@
 use crate::error::SibylsError;
+use clap::ValueEnum;
 use dlc_messages::oracle_msgs::EventDescriptor::{DigitDecompositionEvent, EnumEvent};
 use dlc_messages::oracle_msgs::{
     DigitDecompositionEventDescriptor, EventDescriptor, OracleAnnouncement, OracleAttestation,
@@ -6,7 +7,6 @@ use dlc_messages::oracle_msgs::{
 use serde::{Deserialize, Serialize};
 use std::fmt::{self, Debug, Display, Formatter};
 use std::str::FromStr;
-use clap::ValueEnum;
 use time::{serde::format_description, Duration, OffsetDateTime, Time};
 
 use crate::oracle::pricefeeds::FeedId;

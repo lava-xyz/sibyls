@@ -220,7 +220,13 @@ async fn main() -> anyhow::Result<()> {
             info!("creating oracle for {}", asset_pair);
             // setup event database
 
-            let oracle = Oracle::new(oracle_config, asset_pair_info, keypair, &args.database_url, &args.database_backend)?;
+            let oracle = Oracle::new(
+                oracle_config,
+                asset_pair_info,
+                keypair,
+                &args.database_url,
+                &args.database_backend,
+            )?;
 
             // pricefeed retrieval
             info!("creating pricefeeds for {asset_pair}");

@@ -1,3 +1,4 @@
+use crate::error::DbError::{PgDatabaseError, PgDatabasePoolError};
 use crate::error::SibylsError;
 use crate::{AssetPair, Filters, OracleEvent, SortOrder, PAGE_SIZE};
 use diesel::r2d2::{ConnectionManager, Pool};
@@ -93,12 +94,13 @@ impl PgEventStorage {
         let mut conn = self
             .pool
             .get()
-            .map_err(|e| SibylsError::PgDatabasePoolError(e.to_string()))?;
+            .map_err(|e| PgDatabasePoolError(e.to_string()))?;
         let result = events
             .find((maturation, asset_pair.to_string()))
             .select(EventDTO::as_select())
             .first(&mut conn)
-            .optional()?;
+            .optional()
+            .map_err(|e| PgDatabaseError(e))?;
 
         if let Some(event) = result {
             event.to_oracle_event()
@@ -124,7 +126,7 @@ impl PgEventStorage {
         let mut conn = self
             .pool
             .get()
-            .map_err(|e| SibylsError::PgDatabasePoolError(e.to_string()))?;
+            .map_err(|e| PgDatabasePoolError(e.to_string()))?;
         let results = match filters.sort_by {
             SortOrder::Insertion => events
                 .filter(asset_pair.eq(filters.asset_pair.to_string()))
@@ -132,14 +134,16 @@ impl PgEventStorage {
                 .order(maturation.asc())
                 .limit(PAGE_SIZE as i64)
                 .offset((filters.page * PAGE_SIZE) as i64)
-                .load(&mut conn)?,
+                .load(&mut conn)
+                .map_err(|e| PgDatabaseError(e))?,
             SortOrder::ReverseInsertion => events
                 .filter(asset_pair.eq(filters.asset_pair.to_string()))
                 .select(EventDTO::as_select())
                 .order(maturation.desc())
                 .limit(PAGE_SIZE as i64)
                 .offset((filters.page * PAGE_SIZE) as i64)
-                .load(&mut conn)?,
+                .load(&mut conn)
+                .map_err(|e| PgDatabaseError(e))?,
         };
 
         let mut res = vec![];
@@ -180,12 +184,13 @@ impl PgEventStorage {
         let mut conn = self
             .pool
             .get()
-            .map_err(|e| SibylsError::PgDatabasePoolError(e.to_string()))?;
+            .map_err(|e| PgDatabasePoolError(e.to_string()))?;
 
         diesel::insert_into(crate::schema::events::table)
             .values(new_event)
             .returning(EventDTO::as_returning())
-            .get_result(&mut conn)?;
+            .get_result(&mut conn)
+            .map_err(|e| PgDatabaseError(e))?;
         Ok(())
     }
 
@@ -205,7 +210,7 @@ impl PgEventStorage {
         let mut conn = self
             .pool
             .get()
-            .map_err(|e| SibylsError::PgDatabasePoolError(e.to_string()))?;
+            .map_err(|e| PgDatabasePoolError(e.to_string()))?;
 
         let mut attestation_bytes = Vec::new();
         write_as_tlv(att, &mut attestation_bytes)
@@ -216,7 +221,8 @@ impl PgEventStorage {
 
         diesel::update(events.find((maturation, asset_pair.to_string())))
             .set((attestation.eq(attestation_hex), price.eq(p)))
-            .execute(&mut conn)?;
+            .execute(&mut conn)
+            .map_err(|e| PgDatabaseError(e))?;
         Ok(())
     }
 }

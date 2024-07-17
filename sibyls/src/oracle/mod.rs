@@ -33,11 +33,12 @@ impl Oracle {
                 oracle_config.announcement_offset,
             ));
         }
-        match database_backend{
+        match database_backend {
             DatabaseBackend::Sled => {}
             DatabaseBackend::Pg => {}
         }
-        let event_database = EventStorage::new(database_url, database_backend, asset_pair_info.asset_pair)?;
+        let event_database =
+            EventStorage::new(database_url, database_backend, asset_pair_info.asset_pair)?;
 
         Ok(Oracle {
             oracle_config,
