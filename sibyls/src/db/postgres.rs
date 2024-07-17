@@ -12,7 +12,7 @@ use std::str::FromStr;
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 
-#[derive(Queryable, Selectable)]
+#[derive(Queryable, Selectable, Insertable)]
 #[diesel(table_name = crate::schema::events)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct EventDTO {
@@ -22,15 +22,6 @@ pub struct EventDTO {
     outstanding_sk_nonces: String,
     attestation: Option<String>,
     price: Option<i64>,
-}
-
-#[derive(Insertable)]
-#[diesel(table_name = crate::schema::events)]
-struct NewEvent {
-    pub maturation: OffsetDateTime,
-    pub asset_pair: String,
-    pub announcement: String,
-    pub outstanding_sk_nonces: String,
 }
 
 impl EventDTO {
@@ -177,11 +168,13 @@ impl PgEventStorage {
             .collect::<Vec<String>>()
             .join(",");
 
-        let new_event = NewEvent {
+        let new_event = EventDTO {
             maturation: maturation.clone(),
             asset_pair: asset_pair.to_string(),
             announcement: announcement_hex,
             outstanding_sk_nonces: sk_nonces_hex,
+            attestation: None,
+            price: None,
         };
 
         let mut conn = self
