@@ -10,7 +10,7 @@ use time::format_description::well_known::Rfc3339;
 use time::{Duration, OffsetDateTime};
 
 #[derive(Clone, Deserialize, Serialize)]
-// outstanding_sk_nonces?, announcement, attetstation?, outcome?
+// outstanding_sk_nonces?, announcement, attestation?, outcome?
 struct DbValue(
     pub Option<Vec<[u8; 32]>>,
     pub Vec<u8>,
@@ -20,7 +20,7 @@ struct DbValue(
 
 #[derive(Debug, Clone)]
 pub struct SledEventStorage {
-    event_database: Db,
+    pub(crate) event_database: Db,
 }
 
 impl SledEventStorage {
@@ -401,7 +401,6 @@ mod tests {
 
         assert!(res.is_ok());
         let vec = res.unwrap();
-        println!("{vec:?}");
         assert_eq!(vec.len(), 2);
 
         assert_ne!(vec[0], vec[1]);

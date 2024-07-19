@@ -155,7 +155,7 @@ struct Args {
     /// The oracle config file
     #[clap(long, env, value_name = "DATABASE_URL")]
     database_url: Option<String>,
-    /// The database type (sled/postgres)
+    /// The database type (sled/postgres/dual)
     #[clap(long)]
     #[arg(default_value = "sled")]
     database_backend: DatabaseBackend,

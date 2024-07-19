@@ -35,6 +35,7 @@ impl FromStr for AssetPair {
 pub enum DatabaseBackend {
     Sled,
     Pg,
+    Dual,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -105,14 +106,14 @@ pub struct OracleEvent {
 
 pub const PAGE_SIZE: u32 = 100;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum SortOrder {
     Insertion,
     ReverseInsertion,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Filters {
     pub sort_by: SortOrder,
