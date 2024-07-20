@@ -258,6 +258,39 @@ impl PriceFeed for Kraken {
     //snip
 }
 ```
+# Persistence
+
+
+
+Sibyls supports two backends for data persistence:
+
+1. [Sled](https://sled.rs/) - A modern, high-performance embedded database that offers a simple and efficient way to store and manage data locally.
+
+2. [PostgreSQL](https://www.postgresql.org/) - A powerful, open-source relational database system that provides robust features and scalability for more complex data storage needs.
+
+These options allow Sibyls to be flexible and adaptable, catering to the diverse needs of its users.
+
+
+### Sled
+
+Sled is an embedded database that stores data on the local file system. 
+The Sibyls database backend stores data in `events/{AssetPair}` (eg. `events/BTCUSD`). 
+Sled is the default database, no additional configurations are needed to use it. 
+The user can also enable it explicitly by using the command line argument: `--database_backend sled`.
+
+### PostgreSQL
+
+PostgreSQL is a full futured RDBMS, it can be used in enterprise settings. 
+To use PostgreSQL as the database, the user will need to use the command line argument `--database_backend pg` and `--database_url postgres://user:password@database_host/database_name`.
+The `DATABASE_URL` environment variable can also be used to set the database URL.
+
+### Dual Database Backend
+
+The dual database backend is useful for transitioning from Sled to PostgreSQL.
+If data is stored in PostgreSQL, it reads from the PostgreSQL backend. 
+If not, data is read from the Sled backend and added to the PostgreSQL backend.
+To enable it, the user must include the `--database_backend dual` parameter 
+and set the database URL as it is done for PostgreSQL.
 
 ## Run Sibyls
 
@@ -265,8 +298,6 @@ If you are running Sibyls, or want to run Sibyls and need help, please email hel
 
 # TODO
 The following todos are in decreasing priority.
-## Persistence
-Currently, the Sybils database is on instance only. It should also support using an external database such as Postgres.
 ## Key Handling
 Additional functionality can be added to make working with the key easier. 
 ### Encryption at Rest
