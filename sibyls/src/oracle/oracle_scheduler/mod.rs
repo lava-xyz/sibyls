@@ -77,7 +77,7 @@ fn sign_schnorr_with_nonce<S: Signing>(
                 msg.as_c_ptr(),
                 msg.len(),
                 keypair.as_ptr(),
-                &nonce_params as *const SchnorrSigExtraParams
+                &nonce_params as *const SchnorrSigExtraParams,
             )
         );
 
@@ -141,7 +141,7 @@ impl OracleScheduler {
                     .chars()
                     .map(|char| char.to_string())
                     .collect::<Vec<_>>();
-                let event_value = self.event_queue.remove().map_err(|_| {
+                let mut event_value = self.event_queue.remove().map_err(|_| {
                     OracleSchedulerError::InternalError("event_values should never be empty".into())
                 })?;
                 if event_value.maturation != self.next_attestation {
@@ -157,7 +157,9 @@ impl OracleScheduler {
                     )));
                 }
                 let attestation = build_attestation(
-                    &event_value.outstanding_sk_nonces,
+                    &event_value.outstanding_sk_nonces.take().expect(
+                        "immature event queue values should always have outstanding_sk_nonces",
+                    ),
                     &self.oracle.keypair,
                     &self.secp,
                     outcomes,
@@ -373,23 +375,22 @@ fn create_event(
     );
 
     let asset_pair = oracle.asset_pair_info.asset_pair;
-    oracle
-        .event_database
-        .store_announcement(
-            &maturation,
-            asset_pair,
-            &announcement,
-            &outstanding_sk_nonces,
-        )
-        .expect("");
-
-    let event_value = EventData {
-        maturation,
+    if let Err(err) = oracle.event_database.store_announcement(
+        &maturation,
         asset_pair,
-        outstanding_sk_nonces,
-    };
+        &announcement,
+        &outstanding_sk_nonces,
+    ) {
+        error!("Cannot store announcement: {err}");
+    } else {
+        let event_value = EventData {
+            maturation,
+            asset_pair,
+            outstanding_sk_nonces: Some(outstanding_sk_nonces),
+        };
 
-    event_values.add(event_value).unwrap();
+        event_values.add(event_value).unwrap();
+    }
 
     Ok(())
 }

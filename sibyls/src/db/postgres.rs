@@ -9,6 +9,7 @@ use diesel::{
 use dlc_messages::oracle_msgs::{OracleAnnouncement, OracleAttestation};
 use dlc_messages::ser_impls::{read_as_tlv, write_as_tlv};
 use hex::{FromHex, ToHex};
+use log::info;
 use std::str::FromStr;
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
@@ -20,7 +21,7 @@ pub struct EventDTO {
     maturation: OffsetDateTime,
     asset_pair: String,
     announcement: String,
-    outstanding_sk_nonces: String,
+    outstanding_sk_nonces: Option<String>,
     attestation: Option<String>,
     price: Option<i64>,
 }
@@ -30,14 +31,20 @@ impl EventDTO {
         let maturation = self.maturation.clone();
         let outcome = self.price.clone().map(|x| x as u64);
         let asset_pair = AssetPair::from_str(&self.asset_pair)?;
-        let outstanding_sk_nonces = self
-            .outstanding_sk_nonces
-            .split(",")
-            .map(|hex| FromHex::from_hex(hex))
-            .collect::<Result<Vec<[u8; 32]>, _>>()
-            .map_err(|_| {
-                SibylsError::InternalError("Invalid outstanding_sk_nonces hex".to_string())
-            })?;
+        let outstanding_sk_nonces = if let Some(nonces) = self.outstanding_sk_nonces.clone() {
+            Some(
+                nonces
+                    .split(",")
+                    .map(|hex| FromHex::from_hex(hex))
+                    .collect::<Result<Vec<[u8; 32]>, _>>()
+                    .map_err(|e| {
+                        SibylsError::InternalError(format!("Invalid outstanding_sk_nonces hex {e}"))
+                    })?,
+            )
+        } else {
+            None
+        };
+
         let announcement_bytes: Vec<u8> = FromHex::from_hex(&self.announcement)
             .map_err(|_| SibylsError::InternalError("Invalid announcement hex".to_string()))?;
         let announcement: OracleAnnouncement = read_as_tlv(&mut announcement_bytes.as_slice())
@@ -90,6 +97,10 @@ impl PgEventStorage {
         use crate::schema::events::dsl::events;
         use diesel::QueryDsl;
         use diesel::RunQueryDsl;
+        info!(
+            "retrieving oracle event from {}",
+            maturation.format(&Rfc3339).unwrap()
+        );
 
         let mut conn = self
             .pool
@@ -123,6 +134,10 @@ impl PgEventStorage {
 
         use diesel::QueryDsl;
         use diesel::RunQueryDsl;
+        info!(
+            "retrieving oracle events page {} in {:?}",
+            filters.page, filters.sort_by,
+        );
         let mut conn = self
             .pool
             .get()
@@ -166,11 +181,17 @@ impl PgEventStorage {
             .map_err(|_| SibylsError::InternalError("Invalid announcement".to_string()))?;
         let announcement_hex = announcement_bytes.encode_hex::<String>();
 
-        let sk_nonces_hex = sk_nonces
-            .iter()
-            .map(|bytes| bytes.encode_hex::<String>())
-            .collect::<Vec<String>>()
-            .join(",");
+        let sk_nonces_hex = if sk_nonces.is_empty() {
+            None
+        } else {
+            Some(
+                sk_nonces
+                    .iter()
+                    .map(|bytes| bytes.encode_hex::<String>())
+                    .collect::<Vec<String>>()
+                    .join(","),
+            )
+        };
 
         let new_event = EventDTO {
             maturation: maturation.clone(),
@@ -204,6 +225,7 @@ impl PgEventStorage {
         use crate::schema::events::dsl::attestation;
         use crate::schema::events::dsl::events;
         use crate::schema::events::dsl::price;
+        use crate::schema::events::outstanding_sk_nonces;
         use diesel::QueryDsl;
         use diesel::RunQueryDsl;
 
@@ -220,7 +242,11 @@ impl PgEventStorage {
         let p = outcome as i64;
 
         diesel::update(events.find((maturation, asset_pair.to_string())))
-            .set((attestation.eq(attestation_hex), price.eq(p)))
+            .set((
+                attestation.eq(attestation_hex),
+                price.eq(p),
+                outstanding_sk_nonces.eq(None::<String>),
+            ))
             .execute(&mut conn)
             .map_err(|e| PgDatabaseError(e))?;
         Ok(())
@@ -350,7 +376,7 @@ mod tests {
         assert!(event.attestation.is_none());
         assert_eq!(event.maturation, maturation);
         assert_eq!(event.outcome, None);
-        assert_eq!(event.outstanding_sk_nonces, sk_nonces);
+        assert_eq!(event.outstanding_sk_nonces, Some(sk_nonces.clone()));
 
         let res = db.list_oracle_events(Filters {
             sort_by: SortOrder::Insertion,

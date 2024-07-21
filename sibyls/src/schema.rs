@@ -5,7 +5,7 @@ diesel::table! {
         maturation -> Timestamptz,
         asset_pair -> Varchar,
         announcement -> Text,
-        outstanding_sk_nonces -> Text,
+        outstanding_sk_nonces -> Nullable<Text>,
         attestation -> Nullable<Text>,
         price -> Nullable<Int8>,
     }

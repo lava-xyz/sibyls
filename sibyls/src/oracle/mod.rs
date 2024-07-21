@@ -9,7 +9,7 @@ pub use error::Result;
 pub struct EventData {
     pub maturation: OffsetDateTime,
     pub asset_pair: AssetPair,
-    pub outstanding_sk_nonces: Vec<[u8; 32]>,
+    pub outstanding_sk_nonces: Option<Vec<[u8; 32]>>,
 }
 
 #[derive(Clone)]

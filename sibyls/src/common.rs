@@ -94,11 +94,11 @@ impl Display for AssetPair {
     }
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct OracleEvent {
     pub asset_pair: AssetPair,
     pub maturation: OffsetDateTime,
-    pub(crate) outstanding_sk_nonces: Vec<[u8; 32]>,
+    pub(crate) outstanding_sk_nonces: Option<Vec<[u8; 32]>>,
     pub announcement: OracleAnnouncement,
     pub attestation: Option<OracleAttestation>,
     pub outcome: Option<u64>,

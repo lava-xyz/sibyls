@@ -50,7 +50,7 @@ impl SledEventStorage {
             attestation,
             maturation,
             outcome: event.3,
-            outstanding_sk_nonces: event.0.unwrap(),
+            outstanding_sk_nonces: event.0,
         }
     }
 
@@ -60,6 +60,7 @@ impl SledEventStorage {
         asset_pair: AssetPair,
     ) -> Result<OracleEvent, SibylsError> {
         let id = maturation.format(&Rfc3339).unwrap();
+        info!("retrieving oracle event from {id}");
         match self
             .event_database
             .get(id.to_owned().into_bytes())
@@ -234,6 +235,7 @@ impl SledEventStorage {
                 let mut attestation_bytes = Vec::new();
                 write_as_tlv(attestation, &mut attestation_bytes)
                     .map_err(|_| SibylsError::InternalError("Invalid attestation".to_string()))?;
+                db_value.0 = None;
                 db_value.2 = Some(attestation_bytes);
                 db_value.3 = Some(price);
                 match self.event_database.insert(
@@ -361,7 +363,7 @@ mod tests {
         assert!(event.attestation.is_none());
         assert_eq!(event.maturation, maturation);
         assert_eq!(event.outcome, None);
-        assert_eq!(event.outstanding_sk_nonces, sk_nonces);
+        assert_eq!(event.outstanding_sk_nonces, Some(sk_nonces.clone()));
 
         let res = db.list_oracle_events(Filters {
             sort_by: SortOrder::Insertion,

@@ -24,7 +24,34 @@ impl DualDbEventStorage {
     ) -> Result<OracleEvent, SibylsError> {
         let res = self.pg.get_oracle_event(maturation, asset_pair);
         match res {
-            Err(OracleEventNotFoundError(_)) => self.sled.get_oracle_event(maturation, asset_pair),
+            Err(OracleEventNotFoundError(_)) => {
+                match self.sled.get_oracle_event(maturation, asset_pair) {
+                    Ok(event) => {
+                        let e = event.clone();
+                        self.pg
+                            .store_announcement(
+                                maturation,
+                                asset_pair,
+                                &e.announcement,
+                                &e.outstanding_sk_nonces.unwrap_or_else(|| vec![]),
+                            )
+                            .and_then(|_| {
+                                if e.attestation.is_some() {
+                                    self.pg.store_attestation(
+                                        maturation,
+                                        asset_pair,
+                                        &e.attestation.unwrap(),
+                                        e.outcome.unwrap(),
+                                    )
+                                } else {
+                                    Ok(())
+                                }
+                            })
+                            .map(|_| event)
+                    }
+                    Err(err) => Err(err),
+                }
+            }
             _ => res,
         }
     }
@@ -242,21 +269,13 @@ mod tests {
             )))
         );
 
-        let res = dual.get_oracle_event(&maturation, AssetPair::BTCUSD);
-        assert!(res.is_ok());
-
-        assert_eq!(res, event);
-
-        let res = pg.store_announcement(&maturation, AssetPair::BTCUSD, &ann, &sk_nonces);
-        assert!(res.is_ok());
+        let result = dual.get_oracle_event(&maturation, AssetPair::BTCUSD);
+        assert!(result.is_ok());
 
         let event = sled.get_oracle_event(&maturation, AssetPair::BTCUSD);
         assert!(event.is_ok());
 
         let res = pg.get_oracle_event(&maturation, AssetPair::BTCUSD);
-        assert!(res.is_ok());
-
-        let result = dual.get_oracle_event(&maturation, AssetPair::BTCUSD);
         assert!(res.is_ok());
 
         assert_eq!(event, res);
