@@ -1,8 +1,13 @@
+use crate::error::SibylsError;
+use clap::ValueEnum;
 use dlc_messages::oracle_msgs::EventDescriptor::{DigitDecompositionEvent, EnumEvent};
-use dlc_messages::oracle_msgs::{DigitDecompositionEventDescriptor, EventDescriptor};
+use dlc_messages::oracle_msgs::{
+    DigitDecompositionEventDescriptor, EventDescriptor, OracleAnnouncement, OracleAttestation,
+};
 use serde::{Deserialize, Serialize};
 use std::fmt::{self, Debug, Display, Formatter};
-use time::{serde::format_description, Duration, Time};
+use std::str::FromStr;
+use time::{serde::format_description, Duration, OffsetDateTime, Time};
 
 use crate::oracle::pricefeeds::FeedId;
 
@@ -10,6 +15,27 @@ use crate::oracle::pricefeeds::FeedId;
 pub enum AssetPair {
     BTCUSD,
     BTCUSDT,
+}
+
+impl FromStr for AssetPair {
+    type Err = SibylsError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s == "BTCUSD" {
+            Ok(AssetPair::BTCUSD)
+        } else if s == "BTCUSDT" {
+            Ok(AssetPair::BTCUSDT)
+        } else {
+            Err(SibylsError::UnknownAssetPairError(s.to_string()))
+        }
+    }
+}
+
+#[derive(Debug, Clone, ValueEnum)]
+pub enum DatabaseBackend {
+    Sled,
+    Pg,
+    Dual,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -65,6 +91,43 @@ pub struct AssetPairInfo {
 impl Display for AssetPair {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         Debug::fmt(self, f)
+    }
+}
+
+#[derive(PartialEq, Debug, Clone)]
+pub struct OracleEvent {
+    pub asset_pair: AssetPair,
+    pub maturation: OffsetDateTime,
+    pub(crate) outstanding_sk_nonces: Option<Vec<[u8; 32]>>,
+    pub announcement: OracleAnnouncement,
+    pub attestation: Option<OracleAttestation>,
+    pub outcome: Option<u64>,
+}
+
+pub const PAGE_SIZE: u32 = 100;
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SortOrder {
+    Insertion,
+    ReverseInsertion,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct Filters {
+    pub sort_by: SortOrder,
+    pub page: u32,
+    pub asset_pair: AssetPair,
+}
+
+impl Default for Filters {
+    fn default() -> Self {
+        Filters {
+            sort_by: SortOrder::ReverseInsertion,
+            page: 0,
+            asset_pair: AssetPair::BTCUSD,
+        }
     }
 }
 

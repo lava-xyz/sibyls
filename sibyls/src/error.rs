@@ -1,11 +1,16 @@
+use crate::AssetPair;
+use diesel;
 use displaydoc::Display;
 use thiserror::Error;
 
 #[allow(clippy::enum_variant_names)]
-#[derive(Debug, Display, Error)]
+#[derive(Debug, Display, Error, PartialEq)]
 pub enum SibylsError {
     /// asset pair {0} not recorded
-    UnrecordedAssetPairError(sibyls::AssetPair),
+    UnrecordedAssetPairError(AssetPair),
+
+    /// unknown asset pair {0}
+    UnknownAssetPairError(String),
 
     /// datetime RFC3339 parsing error: {0}
     DatetimeParseError(#[from] time::error::Parse),
@@ -14,7 +19,26 @@ pub enum SibylsError {
     OracleEventNotFoundError(String),
 
     /// database error: {0}
-    DatabaseError(#[from] sled::Error),
+    DatabaseError(#[from] DbError),
+
+    /// {0}
+    InternalError(String),
+}
+
+#[allow(clippy::enum_variant_names)]
+#[derive(Debug, Display, Error, PartialEq)]
+pub enum DbError {
+    /// {0}
+    SledDatabaseError(#[from] sled::Error),
+
+    /// connection error: {0}
+    PgDatabaseConnectionError(#[from] diesel::ConnectionError),
+
+    /// {0}
+    PgDatabaseError(#[from] diesel::result::Error),
+
+    /// database pool error: {0}
+    PgDatabasePoolError(String),
 }
 
 impl actix_web::error::ResponseError for SibylsError {

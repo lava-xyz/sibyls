@@ -1,3 +1,4 @@
+use crate::error::SibylsError;
 use displaydoc::Display;
 use thiserror::Error;
 
@@ -10,4 +11,7 @@ pub enum OracleError {
 
     /// database error: {0}
     DatabaseError(#[from] sled::Error),
+
+    /// {0}
+    SibylsError(#[from] SibylsError),
 }
