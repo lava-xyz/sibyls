@@ -1,4 +1,5 @@
 use crate::{AssetPair, AssetPairInfo, DatabaseBackend, OracleConfig};
+use secp256k1::XOnlyPublicKey;
 use secp256k1_zkp::KeyPair;
 
 mod error;
@@ -42,6 +43,10 @@ impl Oracle {
             event_database,
             keypair,
         })
+    }
+
+    pub fn pubkey(&self) -> XOnlyPublicKey {
+        self.keypair.x_only_public_key().0
     }
 }
 

@@ -27,7 +27,7 @@ log = "0.4.17"
 parking_lot = "0.12.0"
 queues = "1.1.0"
 reqwest = { version = "0.11.10", features = ["json"] }
-secp256k1-zkp = { version = "0.7.0", features = ["bitcoin_hashes", "rand-std"] }
+secp256k1-zkp = { version = "0.7.0", features = ["bitcoin_hashes", "rand-std", "use-serde"] }
 secp256k1 = "0.24.3" # used by secp256k1-zkp
 secp256k1-sys = "0.6.0"# used by secp256k1
 serde = { version = "1.0.137", features = ["derive"] }
