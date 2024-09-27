@@ -115,6 +115,20 @@ async fn config(
     ))
 }
 
+#[get("/pubkey")]
+async fn pubkey(
+    oracles: web::Data<HashMap<AssetPair, Oracle>>,
+) -> actix_web::Result<HttpResponse, actix_web::Error> {
+    info!("GET /pubkey");
+    Ok(HttpResponse::Ok().json(
+        oracles
+            .values()
+            .next()
+            .expect("no asset pairs recorded")
+            .pubkey(),
+    ))
+}
+
 fn get_default_oracle_config_path() -> PathBuf {
     let mut path = env::current_dir().unwrap();
     path.push("config");
@@ -276,6 +290,7 @@ async fn main() -> anyhow::Result<()> {
                 web::scope("/v1")
                     .service(announcements)
                     .service(announcement)
+                    .service(pubkey)
                     .service(config),
             )
     })
