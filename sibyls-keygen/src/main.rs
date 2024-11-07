@@ -145,6 +145,27 @@ mod tests {
     }
 
     #[test]
+    fn test_inspect_key_from_path() {
+        use secp256k1::rand::Rng;
+        let secp = Secp256k1::new();
+        let random_filename: String = rand::thread_rng()
+            .sample_iter(&rand::distributions::Alphanumeric)
+            .take(10)
+            .map(char::from)
+            .collect();
+        let path = env::current_dir().unwrap().join(random_filename);
+
+        let (_, expected_public_key_hex) = generate_keypair(&secp, Some(&path), false).unwrap();
+        
+        let path_string = path.to_str().unwrap();
+        let public_key_hex = inspect_key(&secp, path_string).unwrap();
+        assert_eq!(public_key_hex.len(), 66);
+        assert_eq!(public_key_hex, expected_public_key_hex);
+
+        fs::remove_file(&path).expect("Unable to delete test file");
+    }
+
+    #[test]
     fn test_generate_keypair_file() {
         use secp256k1::rand::Rng;
         let secp = Secp256k1::new();
