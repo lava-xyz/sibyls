@@ -132,6 +132,16 @@ mod tests {
 
         assert_eq!(public_key_hex.len(), 66);
         assert_eq!(public_key_hex, expected_public_key_hex);
+
+        // Test that if a non hex secret key is used we error
+        let secret_key_non_hex = "G1b8c027c89bb2c8b8db0b93721e1e9885e92b6b68d44c1f9026f83e5a2763df";
+        let error_response = inspect_key(&secp, secret_key_non_hex);
+        match error_response {
+            Err(ref e) => {
+                assert_eq!("Invalid secret key", format!("{}", e));
+            }
+            Ok(_) => panic!("Expected an error, but got Ok"),
+        }
     }
 
     #[test]
