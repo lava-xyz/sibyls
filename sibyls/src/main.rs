@@ -1,7 +1,7 @@
 #[macro_use]
 extern crate log;
 
-use actix_web::{get, web, App, HttpResponse, HttpServer};
+use actix_web::{get, web, App, HttpResponse, HttpServer, middleware::Logger};
 use clap::Parser;
 use dlc_messages::ser_impls::write_as_tlv;
 use hex::ToHex;
@@ -62,7 +62,7 @@ async fn announcements(
     oracles: web::Data<HashMap<AssetPair, Oracle>>,
     filters: web::Query<Filters>,
 ) -> actix_web::Result<HttpResponse, actix_web::Error> {
-    info!("GET /announcements: {:#?}", filters);
+    info!("{:#?}", filters);
     let oracle = match oracles.get(&filters.asset_pair) {
         None => return Err(SibylsError::UnrecordedAssetPairError(filters.asset_pair).into()),
         Some(val) => val,
@@ -82,7 +82,7 @@ async fn announcement(
     filters: web::Query<Filters>,
     path: web::Path<String>,
 ) -> actix_web::Result<HttpResponse, actix_web::Error> {
-    info!("GET /announcement/{}: {:#?}", path, filters);
+    info!("{:#?}", filters);
     let maturation =
         OffsetDateTime::parse(&path, &Rfc3339).map_err(SibylsError::DatetimeParseError)?;
 
@@ -105,7 +105,6 @@ async fn announcement(
 async fn config(
     oracles: web::Data<HashMap<AssetPair, Oracle>>,
 ) -> actix_web::Result<HttpResponse, actix_web::Error> {
-    info!("GET /config");
     Ok(HttpResponse::Ok().json(
         oracles
             .values()
@@ -119,7 +118,6 @@ async fn config(
 async fn pubkey(
     oracles: web::Data<HashMap<AssetPair, Oracle>>,
 ) -> actix_web::Result<HttpResponse, actix_web::Error> {
-    info!("GET /pubkey");
     Ok(HttpResponse::Ok().json(
         oracles
             .values()
@@ -285,6 +283,7 @@ async fn main() -> anyhow::Result<()> {
     info!("starting server at {rpc_bind}");
     HttpServer::new(move || {
         App::new()
+            .wrap(Logger::new("[%s][%Ts] %r"))
             .app_data(web::Data::new(oracles.clone()))
             .service(
                 web::scope("/v1")
