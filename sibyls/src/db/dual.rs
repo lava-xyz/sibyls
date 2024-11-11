@@ -389,8 +389,9 @@ mod tests {
         let maturation = maturation.checked_add(Duration::days(3)).unwrap();
         let (ann, sk_nonces) =
             build_test_announcement(&maturation, &keypar, &secp, SigningVersion::Basic);
+        let event_maturity_epoch = OffsetDateTime::from_unix_timestamp(ann.oracle_event.event_maturity_epoch.into()).expect("invalid timestamp");
 
-        let event = sled.store_announcement(&maturation, AssetPair::BTCUSD, &ann, &sk_nonces);
+        let event = sled.store_announcement(&event_maturity_epoch, AssetPair::BTCUSD, &ann, &sk_nonces);
         assert!(event.is_ok());
 
         let res = dual.list_oracle_events(Filters {
