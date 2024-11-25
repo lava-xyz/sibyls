@@ -6,6 +6,7 @@ use dlc_messages::ser_impls::{read_as_tlv, write_as_tlv};
 use log::info;
 use serde::{Deserialize, Serialize};
 use sled::{Db, IVec};
+use std::env;
 use time::format_description::well_known::Rfc3339;
 use time::{Duration, OffsetDateTime};
 
@@ -25,7 +26,8 @@ pub struct SledEventStorage {
 
 impl SledEventStorage {
     pub fn new(asset_pair: AssetPair) -> Result<Self, SibylsError> {
-        let path = format!("events/{}", asset_pair);
+        let base_path = env::var("STORAGE_PATH").unwrap_or_else(|_| "events".to_string());
+        let path = format!("{}/{}", base_path, asset_pair);
         info!("creating sled at {}", path);
         let event_database = sled::open(path).map_err(|e| SledDatabaseError(e))?;
         Ok(SledEventStorage { event_database })
