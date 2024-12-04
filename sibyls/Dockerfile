@@ -20,6 +20,7 @@ FROM ubuntu:22.04
 # Install necessary runtime dependencies
 RUN apt-get update && apt-get install -y \
     libssl3 \
+    libpq5 \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
