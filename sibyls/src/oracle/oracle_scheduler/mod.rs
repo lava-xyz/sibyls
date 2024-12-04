@@ -369,14 +369,18 @@ fn create_event(
         signing_version,
     )?;
 
+    let event_maturity_epoch =
+        OffsetDateTime::from_unix_timestamp(announcement.oracle_event.event_maturity_epoch.into())
+            .expect("invalid timestamp");
+
     info!(
         "creating oracle event (announcement only) with maturation {} and announcement {:#?}",
-        maturation, announcement
+        event_maturity_epoch, announcement
     );
 
     let asset_pair = oracle.asset_pair_info.asset_pair;
     if let Err(err) = oracle.event_database.store_announcement(
-        &maturation,
+        &event_maturity_epoch,
         asset_pair,
         &announcement,
         &outstanding_sk_nonces,
@@ -384,7 +388,7 @@ fn create_event(
         error!("Cannot store announcement: {err}");
     } else {
         let event_value = EventData {
-            maturation,
+            maturation: event_maturity_epoch,
             asset_pair,
             outstanding_sk_nonces: Some(outstanding_sk_nonces),
         };

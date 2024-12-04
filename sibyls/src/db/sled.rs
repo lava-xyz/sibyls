@@ -394,7 +394,9 @@ mod tests {
 
         let (ann, sk_nonces) =
             build_test_announcement(&maturation, &keypar, &secp, SigningVersion::Basic);
-        let res = db.store_announcement(&maturation, ASSET_PAIR, &ann, &sk_nonces);
+        let event_maturity_epoch = OffsetDateTime::from_unix_timestamp(ann.oracle_event.event_maturity_epoch.into()).expect("invalid     timestamp");
+
+        let res = db.store_announcement(&event_maturity_epoch, ASSET_PAIR, &ann, &sk_nonces);
         assert!(res.is_ok());
 
         let res = db.list_oracle_events(Filters {
